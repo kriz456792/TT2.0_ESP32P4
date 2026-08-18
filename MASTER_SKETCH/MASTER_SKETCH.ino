@@ -9,6 +9,8 @@
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 5 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
+#define HX711_RATE_PIN_01 //TODO: ASSIGN PIN TO CONTROL RATE ON LC 1 LOW | HIGH SPS
+#define HX711_RATE_PIN_02 //TODO: ASSIGN PIN TO CONTROL RATE ON LC 2 LOW | HIGH SPS
 #define HX711_DOUT_02 2 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
 #define HX711_SCK_02 4 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
@@ -22,7 +24,7 @@
 //PROCEDURAL MACROS
 #define SAMPLE_RATE_VOLT 10 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define SAMPLE_RATE_AMP 10 //Number of samples taken from module to average a reading. Lowest value is 4.
-#define MIDDLE_POINT_PWM 1500 //STOP signal to thruster.
+#define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
 #define DATA_INTERVAL 800 //Every second we collect data based on the number of times we want, default is 20 times per second.
 #define FORWARD_ 201
 #define REVERSE_ 402
@@ -31,7 +33,7 @@
 #define DEVELOPER_MODE 105
 #define TARE_CELLS 306
 
-const double VOLTAGE_RESOLUTION {.2}; //TODO: Enter the resolution per voltage. Must wire things up and test.
+const double VOLTAGE_RESOLUTION {.200}; //TODO: Enter the resolution per voltage. Must wire things up and test.
 const double AMPERAGE_RESOLUTION {.060}; //TODO: Enter the resolution per amp. Must wire things up and test.
 
 //OBJECTS...
@@ -43,12 +45,17 @@ Servo thruster_motor;
 //OTHER VARIABLES...
 uint64_t t {0}; //t keeps track of current millis the program has been running.
 float volts_{0.0},amps_{0.0};
-int speed_PWM {1500};
-int speed_percentage {0}; //Change manually for testing. 
+int speed_PWM {MIDDLE_POINT_PWM};
+int speed_percentage {0}; 
 int reading_num {10}; //20 collection per second. DEFAULT is 10/Sec
 
+void runTest(int direction);
+void developer_mode(int speed_);
 float voltage_Calculation();
 float amperage_Calculation();
+void getUserInputs();
+void calibrate_loadCells();
+
 
 void setup() {
   Serial.begin(57600); delay(10);
@@ -107,11 +114,23 @@ void setup() {
 //MAIN LOOP ***********************************************************
 void loop() {
 
+  LoadCell_01.update();
+  LoadCell_02.update();
+
+  thruster_motor.writeMicroseconds(1500);
+  
+  Serial.print("LOAD_CELL #1: "); Serial.print(LoadCell_01.getData());
+  Serial.print("  LOAD_CELL #2: "); Serial.print(LoadCell_02.getData());
+  Serial.print("  VOLTAGE: "); Serial.print(voltage_Calculation());
+  Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
+
+  /*
   //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
   Serial.println("ENTER 603 TO RUN TEST.");
   Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
   Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
   Serial.println("ENTER 306 TO TARE CELLS");
+  Serial.print("ENTER CHOICE:");
     
   while (Serial.available() == 0) {
     delay(10);
@@ -137,7 +156,7 @@ void loop() {
 
       break;
     case CALIBRATE_L_CELLS:
-          //TODO: DEVELOP CALIBRATION METHOD.
+      calibrate_loadCells();
       break;
     case DEVELOPER_MODE:
       while (1) {
@@ -183,7 +202,7 @@ void loop() {
     default:
       Serial.println("ENTER VALID CODE");
   }
-
+  */
 }
 
 //METHODS ******************************************************************
@@ -331,6 +350,107 @@ void getUserInputs(){
   }
 
 }
+
+void calibrate_loadCells(){
+  Serial.println("Start Calibration");
+  Serial.println("Place Load Cell One on a level stable surface");
+  Serial.println("Remove Any Load");
+  Serial.println("Send 't' from serial monitor to set the tare offset");
+
+  bool _resume = false;
+  while (_resume == false) {
+    LoadCell_01.update();
+    if (Serial.available() > 0) {
+      if (Serial.available() > 0) {
+        char inByte = Serial.read();
+        if (inByte == 't') {LoadCell_01.tareNoDelay();}
+      }
+    }
+    if (LoadCell_01.getDataSetStatus() == true) {
+      Serial.println("Tare Load Cell 01 Complete");
+      _resume = true;
+    }
+  }
+
+  Serial.println("Now place known mass on the loadcell 01.");
+  Serial.println("Then send the weight of this mass (i.e 100.0) from serial monitor.");
+
+  float known_mass = 0;
+  _resume = false;
+  while (_resume == false) {
+    LoadCell_01.update();
+    if (Serial.available() > 0){
+      known_mass = Serial.parseFloat();
+      if (known_mass != 0){
+        Serial.print("Known mass is: ");
+        Serial.println(known_mass);
+        _resume = true;
+      }
+    }
+  }
+
+  LoadCell_01.refreshDataSet();
+  float newCalibrationValue = LoadCell_01.getNewCalibration(known_mass);
+
+  Serial.print("New calibration value has been set to:");
+  Serial.print(newCalibrationValue);
+  Serial.println(", use this as calibration value (calFactor) in your project sketch");
+  Serial.print("Save this value to EEPROM address");
+  Serial.println(EEPROM_ADDR_VAL_01);
+  Serial.println("? y/n");
+
+  _resume = false;
+  while (_resume == false) {
+    if (Serial.available() > 0){
+      char inByte = Serial.read();
+      if (inByte = 'y'){
+#if defined(ESP8266) || defined(ESP32)
+        EEPROM.begin(512);
+#endif
+        EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
+#if defined(ESP8266) || defined(ESP32)
+        EEPROM.commit();
+#endif
+        EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        Serial.print("Value: ");
+        Serial.print(newCalibrationValue);
+        Serial.print("Saved to EEPROM address: ");
+        Serial.println(EEPROM_ADDR_VAL_01);
+        _resume = true;
+      }
+      else if (inByte == 'n') {
+        Serial.println("Value not saved to EEPROM");
+        _resume = true;
+      }
+    }
+  }
+
+  //TODO: COMPLETE TO CALIBRATE LOAD CELL 02
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
