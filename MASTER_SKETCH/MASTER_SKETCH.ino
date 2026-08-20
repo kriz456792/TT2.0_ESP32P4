@@ -9,7 +9,7 @@
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
-#define HX711_RATE_PIN 3 PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
+#define HX711_RATE_PIN 3 //PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
 #define HX711_DOUT_02 4 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
 #define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
