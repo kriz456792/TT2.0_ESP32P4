@@ -9,7 +9,7 @@
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
-#define HX711_RATE_PIN 3 //TODO: ASSIGN PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
+#define HX711_RATE_PIN 3 PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
 #define HX711_DOUT_02 4 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
 #define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
@@ -24,7 +24,7 @@
 #define SAMPLE_RATE_VOLT 10 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define SAMPLE_RATE_AMP 10 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
-#define DATA_INTERVAL 800 //Every second we collect data based on the number of times we want, default is 20 times per second.
+#define DATA_INTERVAL 800 //Every second we collect data based on the number of times we want, default is 20 times per second. TODO: FIND WAY TO IMPROVE DATA INTERVAL COLLECTION
 #define FORWARD_ 201
 #define REVERSE_ 402
 #define RUN_TEST 603
@@ -34,8 +34,8 @@
 #define LC_01 111
 #define LC_02 222
 
-const double VOLTAGE_RESOLUTION {.200}; //TODO: Enter the resolution per voltage. Must wire things up and test.
-const double AMPERAGE_RESOLUTION {.060}; //TODO: Enter the resolution per amp. Must wire things up and test.
+const double VOLTAGE_RESOLUTION {.200}; 
+const double AMPERAGE_RESOLUTION {.060}; 
 
 //OBJECTS...
 Adafruit_ADS1X15 ads_module;
@@ -50,6 +50,7 @@ int speed_PWM {MIDDLE_POINT_PWM};
 int speed_percentage {0}; 
 int reading_num {10}; //20 collection per second. DEFAULT is 10/Sec
 
+//FUNCTION SIGNATURES...
 void runTest(int direction);
 void developer_mode(int speed_);
 float voltage_Calculation();
