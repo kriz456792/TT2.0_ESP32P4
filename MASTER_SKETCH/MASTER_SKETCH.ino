@@ -7,15 +7,14 @@
 //PINS
 #define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
-#define HX711_DOUT_01 5 //ESP32 PIN 5. Assigned to Load Cell Chip
+#define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
-#define HX711_RATE_PIN_01 //TODO: ASSIGN PIN TO CONTROL RATE ON LC 1 LOW | HIGH SPS
-#define HX711_RATE_PIN_02 //TODO: ASSIGN PIN TO CONTROL RATE ON LC 2 LOW | HIGH SPS
-#define HX711_DOUT_02 2 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
-#define HX711_SCK_02 4 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
+#define HX711_RATE_PIN 3 //TODO: ASSIGN PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
+#define HX711_DOUT_02 4 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
+#define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
 #define SIGNAL_PIN_23 23 //TODO: ASSIGN TASK...
-#define ESC_PIN 25 //THRUSTER PIN
+#define ESC_PIN 14 //THRUSTER PIN
 
 //ADDRESSES
 #define EEPROM_ADDR_VAL_01 0 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
@@ -32,6 +31,8 @@
 #define CALIBRATE_L_CELLS 804
 #define DEVELOPER_MODE 105
 #define TARE_CELLS 306
+#define LC_01 111
+#define LC_02 222
 
 const double VOLTAGE_RESOLUTION {.200}; //TODO: Enter the resolution per voltage. Must wire things up and test.
 const double AMPERAGE_RESOLUTION {.060}; //TODO: Enter the resolution per amp. Must wire things up and test.
@@ -54,7 +55,7 @@ void developer_mode(int speed_);
 float voltage_Calculation();
 float amperage_Calculation();
 void getUserInputs();
-void calibrate_loadCells();
+void calibrate_loadCell(HX711_ADC& LoadCell);
 
 
 void setup() {
@@ -124,7 +125,7 @@ void loop() {
   Serial.print("  VOLTAGE: "); Serial.print(voltage_Calculation());
   Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
 
-  /*
+  
   //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
   Serial.println("ENTER 603 TO RUN TEST.");
   Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
@@ -156,7 +157,8 @@ void loop() {
 
       break;
     case CALIBRATE_L_CELLS:
-      calibrate_loadCells();
+      calibrate_loadCell(LoadCell_01, LC_01);
+      calibrate_loadCell(LoadCell_02, LC_02);
       break;
     case DEVELOPER_MODE:
       while (1) {
@@ -202,7 +204,7 @@ void loop() {
     default:
       Serial.println("ENTER VALID CODE");
   }
-  */
+  
 }
 
 //METHODS ******************************************************************
@@ -351,22 +353,30 @@ void getUserInputs(){
 
 }
 
-void calibrate_loadCells(){
+void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
+
   Serial.println("Start Calibration");
-  Serial.println("Place Load Cell One on a level stable surface");
+  switch (LC_num) {
+    case LC_01:
+      Serial.println("Place Load Cell One on a level stable surface");
+      break;
+    case LC_02:
+      Serial.println("Place Load Cell Two on a level stable surface");
+      break;
+  }
   Serial.println("Remove Any Load");
   Serial.println("Send 't' from serial monitor to set the tare offset");
 
   bool _resume = false;
   while (_resume == false) {
-    LoadCell_01.update();
+    LoadCell.update();
     if (Serial.available() > 0) {
       if (Serial.available() > 0) {
         char inByte = Serial.read();
-        if (inByte == 't') {LoadCell_01.tareNoDelay();}
+        if (inByte == 't') {LoadCell.tareNoDelay();}
       }
     }
-    if (LoadCell_01.getDataSetStatus() == true) {
+    if (LoadCell.getDataSetStatus() == true) {
       Serial.println("Tare Load Cell 01 Complete");
       _resume = true;
     }
@@ -378,7 +388,7 @@ void calibrate_loadCells(){
   float known_mass = 0;
   _resume = false;
   while (_resume == false) {
-    LoadCell_01.update();
+    LoadCell.update();
     if (Serial.available() > 0){
       known_mass = Serial.parseFloat();
       if (known_mass != 0){
@@ -389,14 +399,21 @@ void calibrate_loadCells(){
     }
   }
 
-  LoadCell_01.refreshDataSet();
-  float newCalibrationValue = LoadCell_01.getNewCalibration(known_mass);
+  LoadCell.refreshDataSet();
+  float newCalibrationValue = LoadCell.getNewCalibration(known_mass);
 
   Serial.print("New calibration value has been set to:");
   Serial.print(newCalibrationValue);
   Serial.println(", use this as calibration value (calFactor) in your project sketch");
   Serial.print("Save this value to EEPROM address");
-  Serial.println(EEPROM_ADDR_VAL_01);
+  switch (LC_num) {
+    case LC_01:
+      Serial.println(EEPROM_ADDR_VAL_01);
+      break;
+    case LC_02:
+      Serial.println(EEPROM_ADDR_VAL_02);
+      break;
+  }
   Serial.println("? y/n");
 
   _resume = false;
@@ -407,25 +424,47 @@ void calibrate_loadCells(){
 #if defined(ESP8266) || defined(ESP32)
         EEPROM.begin(512);
 #endif
-        EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        switch (LC_num) {
+          case LC_01:
+            EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
+            break;
+          case LC_02:
+            EEPROM.put(EEPROM_ADDR_VAL_02, newCalibrationValue);
+            break;
+        }
 #if defined(ESP8266) || defined(ESP32)
         EEPROM.commit();
 #endif
-        EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        switch (LC_num) {
+          case LC_01:
+            EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+            break;
+          case LC_02:
+            EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
+            break;
+        }
         Serial.print("Value: ");
         Serial.print(newCalibrationValue);
         Serial.print("Saved to EEPROM address: ");
-        Serial.println(EEPROM_ADDR_VAL_01);
+
+        switch (LC_num) {
+          case LC_01:
+            Serial.println(EEPROM_ADDR_VAL_01);
+            break;
+          case LC_02:
+            Serial.println(EEPROM_ADDR_VAL_02);
+            break;
+        }
+
         _resume = true;
       }
       else if (inByte == 'n') {
         Serial.println("Value not saved to EEPROM");
         _resume = true;
       }
+
     }
   }
-
-  //TODO: COMPLETE TO CALIBRATE LOAD CELL 02
 }
 
 
