@@ -2,10 +2,13 @@
 #include <HX711_ADC.h> //NOTE: config.h sample rate must be set low for higher speeds.
 #include <ESP32Servo.h>
 #include <EEPROM.h> 
+#include "USB.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 //TODO: GUI 
 
-//TODO: MULTITHREAD COMUNICATION & OPERATION 
+//TODO: MULTITHREAD COMUNICATION & OPERATION ... WIP CHRIS
 
 //TODO: MODIFY RUN TEST METHOD TO RUN TEST FROM 0 POWER TO 100 POWER BOTH IN REVERSE AND FORDWARD | MAIN TEST: CUSTOM TEST SEQUENCE OPTION 
 
@@ -46,11 +49,18 @@
 const double VOLTAGE_RESOLUTION {.200}; 
 const double AMPERAGE_RESOLUTION {.060}; 
 
-//OBJECTS...
-Adafruit_ADS1X15 ads_module;
+//GLOBAL OBJECTS...
 HX711_ADC LoadCell_01(HX711_DOUT_01, HX711_SCK_01);
 HX711_ADC LoadCell_02(HX711_DOUT_02, HX711_SCK_02);
+QueueHandle_t usbRxQueue; //Receiver Queue
+QueueHandle_t usbTxQueue; //Transmission Queue
+Adafruit_ADS1X15 ads_module;
 Servo thruster_motor;
+
+//STRUCTURES...
+typedef struct{
+  char message[64];
+} UsbMessage;
 
 //OTHER VARIABLES...
 uint64_t t {0}; //t keeps track of current millis the program has been running.
@@ -67,9 +77,47 @@ float amperage_Calculation();
 void getUserInputs();
 void calibrate_loadCell(HX711_ADC& LoadCell);
 
+//PARALLEL PROGRAMS RUNNING IN A CORE EACH---------------------------------------------------------------------------------------------------------------
+void usbTask(void *parameter){
+  UsbMessage msg; //array to hold messge
+
+  while(true){
+    if(Serial.available()){
+      String input = Serial.readStringUntil('\n');
+
+      input.toCharArray(msg.message, sizeof(msg.message));
+
+      xQueueSend(usbRxQueue, &msg, portMAX_DELAY);
+    }
+
+    if(xQueueReceive(usbTxQueue, &msg, 0)){
+      Serial.println(msg.message);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
+void applicationTask(void *parameter){
+  UsbMessage rx, tx;
+
+  while(true){
+    if(xQueueReceive(usbRxQueue, &rx, 0)){
+      if(strcmp(rx.message, "HELLO") == 0){
+        strcpy(tx.message, "HELLO WORLD, IT WORKED!");
+
+        xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+//---------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 void setup() {
-  Serial.begin(57600); delay(10);
+  Serial.begin(115200); delay(10);
   Serial.print("Setting UP...");
 
   //OTHER OPTIONS: RATE_ADS1115_8SPS | RATE_ADS1115_32SPS | RATE_ADS1115_475SPS | RATE_ADS1115_860SPS...
@@ -120,6 +168,11 @@ void setup() {
   delay(7000); // allow thruster to settle
 
   Serial.println("Startup is complete...");
+  usbTxQueue = xQueueCreate(10, sizeof(UsbMessage));
+  usbRxQueue = xQueueCreate(40, sizeof(UsbMessage));
+
+  xTaskCreatePinnedToCore(usbTask, "USB", 4096, NULL, 3, NULL,0);
+  xTaskCreatePinnedToCore(applicationTask, "Application", 4096, NULL, 2, NULL, 1);
 }
 
 //MAIN LOOP ***********************************************************
