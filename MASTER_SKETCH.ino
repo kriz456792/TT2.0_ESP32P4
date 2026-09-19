@@ -81,6 +81,13 @@ void calibrate_loadCell(HX711_ADC& LoadCell);
 void usbTask(void *parameter){
   UsbMessage msg; //array to hold messge
 
+  //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
+  Serial.println("ENTER 603 TO RUN TEST.");
+  Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
+  Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
+  Serial.println("ENTER 306 TO TARE CELLS");
+  Serial.print("ENTER CHOICE:");
+
   while(true){
     if(Serial.available()){
       String input = Serial.readStringUntil('\n');
@@ -103,11 +110,86 @@ void applicationTask(void *parameter){
 
   while(true){
     if(xQueueReceive(usbRxQueue, &rx, 0)){
-      if(strcmp(rx.message, "HELLO") == 0){
-        strcpy(tx.message, "HELLO WORLD, IT WORKED!");
+      
+      char *end;
+      long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
+      int speed_temp {0};
 
+      if (*end == '\0'){
+        
+      }else {
+        String invalid_input = "INVALID INPUT";
+        invalid_input.toCharArray(tx.message, sizeof(invalid_input));
         xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
       }
+
+      switch(user_input){
+        case RUN_TEST: 
+          getUserInputs();
+
+          speed_PWM = MIDDLE_POINT_PWM + speed_percentage * 4;
+          runTest(FORWARD_);
+
+          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
+          delay(7000);
+
+          speed_PWM = MIDDLE_POINT_PWM - speed_percentage * 4;
+          runTest(REVERSE_);
+
+          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);   
+
+          break;
+        case CALIBRATE_L_CELLS:
+          calibrate_loadCell(LoadCell_01, LC_01);
+          calibrate_loadCell(LoadCell_02, LC_02);
+          break;
+        case DEVELOPER_MODE:
+          while (1) {
+            Serial.print("Enter Power %: ");
+        
+            while (Serial.available() == 0) {
+              delay(100);
+            }
+        
+            speed_temp = Serial.parseInt();
+
+            if (speed_temp >= 1 && speed_temp <= 100) {
+              Serial.println(speed_temp);
+              break;
+            }
+            else{
+              Serial.println(speed_temp);
+              Serial.println(" Input NOT Valid. Enter # 1 - 100");
+            }
+          }
+          developer_mode(MIDDLE_POINT_PWM + (speed_temp * 4));
+
+          break;
+        case TARE_CELLS:
+          // receive command from serial terminal, send 't' to initiate tare operation:
+          if (Serial.available() > 0) {
+            char inByte = Serial.read();
+            if (inByte == 't') {
+              LoadCell_01.tareNoDelay();
+              LoadCell_02.tareNoDelay();
+            }
+          }
+
+          //check if last tare operation is complete
+          if (LoadCell_01.getTareStatus() == true) {
+            Serial.println("TARE LOAD CELL #1 COMPLETE");
+          }
+          if (LoadCell_02.getTareStatus() == true) {
+            Serial.println("TARE LOAD CELL #2 COMPLETE");
+          }
+
+          break;
+        default:
+          Serial.println("ENTER VALID CODE");
+      }
+
+      //xQueueSend(usbTxQueue, &tx, portMAX_DELAY); USED TO QUEUE DATA THAT NEEDS TO GO TO USER MACHINE.
+      
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -189,84 +271,7 @@ void loop() {
   Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
 
   /*
-  //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
-  Serial.println("ENTER 603 TO RUN TEST.");
-  Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
-  Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
-  Serial.println("ENTER 306 TO TARE CELLS");
-  Serial.print("ENTER CHOICE:");
-    
-  while (Serial.available() == 0) {
-    delay(10);
-  }
-
-  int user_input = Serial.parseInt();
-  int speed_temp {0};
-
-  switch(user_input){
-    case RUN_TEST: 
-      getUserInputs();
-
-      speed_PWM = MIDDLE_POINT_PWM + speed_percentage * 4;
-      runTest(FORWARD_);
-
-      thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
-      delay(7000);
-
-      speed_PWM = MIDDLE_POINT_PWM - speed_percentage * 4;
-      runTest(REVERSE_);
-
-      thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);   
-
-      break;
-    case CALIBRATE_L_CELLS:
-      calibrate_loadCell(LoadCell_01, LC_01);
-      calibrate_loadCell(LoadCell_02, LC_02);
-      break;
-    case DEVELOPER_MODE:
-      while (1) {
-        Serial.print("Enter Power %: ");
-    
-        while (Serial.available() == 0) {
-          delay(100);
-        }
-    
-        speed_temp = Serial.parseInt();
-
-        if (speed_temp >= 1 && speed_temp <= 100) {
-          Serial.println(speed_temp);
-          break;
-        }
-        else{
-          Serial.println(speed_temp);
-          Serial.println(" Input NOT Valid. Enter # 1 - 100");
-        }
-      }
-      developer_mode(MIDDLE_POINT_PWM + (speed_temp * 4));
-
-      break;
-    case TARE_CELLS:
-      // receive command from serial terminal, send 't' to initiate tare operation:
-      if (Serial.available() > 0) {
-        char inByte = Serial.read();
-        if (inByte == 't') {
-          LoadCell_01.tareNoDelay();
-          LoadCell_02.tareNoDelay();
-        }
-      }
-
-      //check if last tare operation is complete
-      if (LoadCell_01.getTareStatus() == true) {
-        Serial.println("TARE LOAD CELL #1 COMPLETE");
-      }
-      if (LoadCell_02.getTareStatus() == true) {
-        Serial.println("TARE LOAD CELL #2 COMPLETE");
-      }
-
-      break;
-    default:
-      Serial.println("ENTER VALID CODE");
-  }
+  
   */
 }
 
