@@ -118,77 +118,42 @@ void applicationTask(void *parameter){
       if (*end == '\0'){
         
       }else {
-        String invalid_input = "INVALID INPUT";
-        invalid_input.toCharArray(tx.message, sizeof(invalid_input));
+        strcpy(tx.message, "INVALID INPUT");
         xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
       }
 
       switch(user_input){
-        case RUN_TEST: 
-          getUserInputs();
-
-          speed_PWM = MIDDLE_POINT_PWM + speed_percentage * 4;
-          runTest(FORWARD_);
-
-          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
-          delay(7000);
-
-          speed_PWM = MIDDLE_POINT_PWM - speed_percentage * 4;
-          runTest(REVERSE_);
-
-          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);   
-
+        case RUN_TEST:
+          strcpy(tx.message, "TODO: CREATE RUN TEST LOGIC");
+          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           break;
         case CALIBRATE_L_CELLS:
           calibrate_loadCell(LoadCell_01, LC_01);
           calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
-          while (1) {
-            Serial.print("Enter Power %: ");
-        
-            while (Serial.available() == 0) {
-              delay(100);
-            }
-        
-            speed_temp = Serial.parseInt();
-
-            if (speed_temp >= 1 && speed_temp <= 100) {
-              Serial.println(speed_temp);
-              break;
-            }
-            else{
-              Serial.println(speed_temp);
-              Serial.println(" Input NOT Valid. Enter # 1 - 100");
-            }
-          }
-          developer_mode(MIDDLE_POINT_PWM + (speed_temp * 4));
-
+          strcpy(tx.message, "TODO: CREATE DEVELOPER MODE LOGIC");
+          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           break;
         case TARE_CELLS:
           // receive command from serial terminal, send 't' to initiate tare operation:
-          if (Serial.available() > 0) {
-            char inByte = Serial.read();
-            if (inByte == 't') {
-              LoadCell_01.tareNoDelay();
-              LoadCell_02.tareNoDelay();
-            }
-          }
+          LoadCell_01.tareNoDelay();
+          LoadCell_02.tareNoDelay();
 
           //check if last tare operation is complete
           if (LoadCell_01.getTareStatus() == true) {
-            Serial.println("TARE LOAD CELL #1 COMPLETE");
+            strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
+            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           }
           if (LoadCell_02.getTareStatus() == true) {
-            Serial.println("TARE LOAD CELL #2 COMPLETE");
+            strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
+            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           }
 
           break;
         default:
           Serial.println("ENTER VALID CODE");
       }
-
-      //xQueueSend(usbTxQueue, &tx, portMAX_DELAY); USED TO QUEUE DATA THAT NEEDS TO GO TO USER MACHINE.
       
     }
 
