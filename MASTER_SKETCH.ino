@@ -83,7 +83,7 @@ void setup() {
     Serial.println("ADS1115 Module Initialized Succesfully!!!");
   }
 
-  ads_module.setGain(GAIN_ONE);
+  ads_module.setGain(GAIN_ONE); //TODO: CHANGE AND TEST -> GAIN_TWOTHIRDS
 
   float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
   unsigned long stabilizing_time {2000};
