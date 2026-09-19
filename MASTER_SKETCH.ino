@@ -1,8 +1,17 @@
 #include <Adafruit_ADS1X15.h> 
 #include <HX711_ADC.h> //NOTE: config.h sample rate must be set low for higher speeds.
 #include <ESP32Servo.h>
-#include <EEPROM.h> //TODO: Calibrate Individual Load Cells and save to EEPROM.
+#include <EEPROM.h> 
 
+//TODO: GUI 
+
+//TODO: MULTITHREAD COMUNICATION & OPERATION 
+
+//TODO: MODIFY RUN TEST METHOD TO RUN TEST FROM 0 POWER TO 100 POWER BOTH IN REVERSE AND FORDWARD | MAIN TEST: CUSTOM TEST SEQUENCE OPTION 
+
+//TODO: IMPROVE VOLTAGE & AMPERAGE CALCULATION METHOD //adds extra sample(s) to the dataset removes peak/valley 
+
+//TODO: DEVELOPER MODE LOGIC NEEDED | DYNAMIC INPUT FOR SPEED CONTROL 
 
 //PINS
 #define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
