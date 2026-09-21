@@ -82,11 +82,11 @@ void usbTask(void *parameter){
   UsbMessage msg; //array to hold messge
 
   //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
-  // Serial.println("ENTER 603 TO RUN TEST.");
-  // Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
-  // Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
-  // Serial.println("ENTER 306 TO TARE CELLS");
-  // Serial.print("ENTER CHOICE:");
+  Serial.println("ENTER 603 TO RUN TEST.");
+  Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
+  Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
+  Serial.println("ENTER 306 TO TARE CELLS");
+  Serial.print("ENTER CHOICE:");
 
   while(true){
     if(Serial.available()){
@@ -109,18 +109,24 @@ void applicationTask(void *parameter){
   UsbMessage rx, tx;
 
   while(true){
+
+    LoadCell_01.update();
+    LoadCell_02.update();
+
     if(xQueueReceive(usbRxQueue, &rx, 0)){
       
       char *end;
       long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
       int speed_temp {0};
+      double test_x {0};
 
       if (*end == '\0')
       {
         switch(user_input)
         {
         case RUN_TEST:
-          strcpy(tx.message, "42,VOL:12.5,AMP:14,TIME:1053,FOR:50");
+          test_x = ads_module.readADC_SingleEnded(ADS_01);
+          snprintf(tx.message, sizeof(tx.message), "%.2f", test_x);
           xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           break;
         case CALIBRATE_L_CELLS:
@@ -134,20 +140,23 @@ void applicationTask(void *parameter){
           xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
           break;
         case TARE_CELLS:
-          strcpy(tx.message, "TODO: UNCOMMENT OUT LOGIC TARE_CELL TASK");
-          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
-          // LoadCell_01.tareNoDelay();
-          // LoadCell_02.tareNoDelay();
+          
+          LoadCell_01.tareNoDelay();
+          LoadCell_02.tareNoDelay();
 
-          // //check if last tare operation is complete
-          // if (LoadCell_01.getTareStatus() == true) {
-          //   strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
-          //   xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
-          // }
-          // if (LoadCell_02.getTareStatus() == true) {
-          //   strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
-          //   xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
-          // }
+          //check if last tare operation is complete
+          if (LoadCell_01.getTareStatus() == true) {
+            strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
+            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          }
+          else{
+            strcpy(tx.message, "TARE FAILED");
+            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          }
+          if (LoadCell_02.getTareStatus() == true) {
+            strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
+            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          }
 
           break;
         default:
@@ -176,50 +185,50 @@ void setup() {
   //OTHER OPTIONS: RATE_ADS1115_8SPS | RATE_ADS1115_32SPS | RATE_ADS1115_475SPS | RATE_ADS1115_860SPS...
   //DEFAULT is 128 Samples-Per-Second. Higher rate makes the program faster but less reliable data...
 
-  // ads_module.setDataRate(RATE_ADS1115_860SPS); // 250 SPS
+  ads_module.setDataRate(RATE_ADS1115_860SPS); // 250 SPS
 
-  // if(!ads_module.begin()){
-  //   Serial.println("Failed to Initialize ADS Module");
-  //   while(1);
-  // } else{
-  //   Serial.println("ADS1115 Module Initialized Succesfully!!!");
-  // }
+  if(!ads_module.begin()){
+    Serial.println("Failed to Initialize ADS Module");
+    while(1);
+  } else{
+    Serial.println("ADS1115 Module Initialized Succesfully!!!");
+  }
 
-  // ads_module.setGain(GAIN_ONE); //TODO: CHANGE AND TEST -> GAIN_TWOTHIRDS
+  ads_module.setGain(GAIN_ONE); //TODO: CHANGE AND TEST -> GAIN_TWOTHIRDS
 
-  // float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
-  // unsigned long stabilizing_time {2000};
-  // boolean _tare { true };
-  // byte loadcell_01_ready {0}, loadcell_02_ready {0};
+  float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
+  unsigned long stabilizing_time {2000};
+  boolean _tare { true };
+  byte loadcell_01_ready {0}, loadcell_02_ready {0};
 
-  // /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM.
-  // EEPROM.begin(512);
-  // EEPROM.get(EEPROM_ADDR_VAL_01, calibrationValue_01);
-  // EEPROM.get(EEPROM_ADDR_VAL_02, calibrationValue_02);
-  // */
+  /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM.
+  EEPROM.begin(512);
+  EEPROM.get(EEPROM_ADDR_VAL_01, calibrationValue_01);
+  EEPROM.get(EEPROM_ADDR_VAL_02, calibrationValue_02);
+  */
 
-  // LoadCell_01.begin();
-  // LoadCell_02.begin();
+  LoadCell_01.begin();
+  LoadCell_02.begin();
 
-  // while (loadcell_01_ready + loadcell_02_ready < 2) {
-  //   if (!loadcell_01_ready){ loadcell_01_ready = LoadCell_01.startMultiple(stabilizing_time, _tare); }
-  //   if (!loadcell_02_ready){ loadcell_02_ready = LoadCell_02.startMultiple(stabilizing_time, _tare); }
-  // }
+  while (loadcell_01_ready + loadcell_02_ready < 2) {
+    if (!loadcell_01_ready){ loadcell_01_ready = LoadCell_01.startMultiple(stabilizing_time, _tare); }
+    if (!loadcell_02_ready){ loadcell_02_ready = LoadCell_02.startMultiple(stabilizing_time, _tare); }
+  }
 
-  // if (LoadCell_01.getTareTimeoutFlag()){
-  //   Serial.println("Timeout, check MCU>HX711 no.01 wiring and pins");
-  // }
-  // if (LoadCell_02.getTareTimeoutFlag()){
-  //   Serial.println("Timeout, check MCU>HX711 no.02 wiring and pins");
-  // }
+  if (LoadCell_01.getTareTimeoutFlag()){
+    Serial.println("Timeout, check MCU>HX711 no.01 wiring and pins");
+  }
+  if (LoadCell_02.getTareTimeoutFlag()){
+    Serial.println("Timeout, check MCU>HX711 no.02 wiring and pins");
+  }
 
-  // LoadCell_01.setCalFactor(calibrationValue_01);
-  // LoadCell_02.setCalFactor(calibrationValue_02);
+  LoadCell_01.setCalFactor(calibrationValue_01);
+  LoadCell_02.setCalFactor(calibrationValue_02);
 
-  // thruster_motor.setPeriodHertz(100);
-  // thruster_motor.attach(ESC_PIN, 1100, 1900); //PIN | min | max 
-  // thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM); //middlepoint is STOP.
-  // delay(7000); // allow thruster to settle
+  thruster_motor.setPeriodHertz(100);
+  thruster_motor.attach(ESC_PIN, 1100, 1900); //PIN | min | max 
+  thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM); //middlepoint is STOP.
+  delay(7000); // allow thruster to settle
 
   Serial.println("Startup is complete...");
   usbTxQueue = xQueueCreate(10, sizeof(UsbMessage));
