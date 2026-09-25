@@ -62,10 +62,10 @@ typedef struct{
 
 //OTHER VARIABLES...
 uint64_t t {0}; //t keeps track of current millis the program has been running.
-float volts_{0.0},amps_{0.0};
 int speed_PWM {MIDDLE_POINT_PWM};
 int speed_percentage {0}; 
 int reading_num {10}; //20 collection per second. DEFAULT is 10/Sec
+UsbMessage rx, tx, msg; //Structures to hold messages.
 
 //FUNCTION SIGNATURES...
 void runTest(int direction);
@@ -77,7 +77,6 @@ void calibrate_loadCell(HX711_ADC& LoadCell);
 
 //PARALLEL PROGRAMS RUNNING IN A CORE EACH---------------------------------------------------------------------------------------------------------------
 void usbTask(void *parameter){
-  UsbMessage msg; //array to hold messge
 
   //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
   // Serial.println("ENTER 603 TO RUN TEST.");
@@ -92,7 +91,7 @@ void usbTask(void *parameter){
 
       input.toCharArray(msg.message, sizeof(msg.message));
 
-      xQueueSend(usbRxQueue, &msg, pdMS_TO_TICKS(100));
+      xQueueSend(usbRxQueue, &msg, pdMS_TO_TICKS(10));
     }
 
     if(xQueueReceive(usbTxQueue, &msg, 0)){
@@ -104,7 +103,6 @@ void usbTask(void *parameter){
 }
 
 void applicationTask(void *parameter){
-  UsbMessage rx, tx;
 
   while(true){
 
@@ -128,13 +126,13 @@ void applicationTask(void *parameter){
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
-          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           //calibrate_loadCell(LoadCell_01, LC_01);
           //calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
           strcpy(tx.message, "TODO: CREATE DEVELOPER MODE LOGIC");
-          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           break;
         case TARE_CELLS:
           LoadCell_01.tare();
@@ -143,29 +141,29 @@ void applicationTask(void *parameter){
           //check if last tare operation is complete
           if (LoadCell_01.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
-            xQueueSend(usbTxQueue, &tx, 0);
+            xQueueSend(usbTxQueue, &tx, 10);
           }
           else{
             strcpy(tx.message, "TARE FAILED LC_1");
-            xQueueSend(usbTxQueue, &tx, 0);
+            xQueueSend(usbTxQueue, &tx, 10);
           }
           if (LoadCell_02.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
-            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           }
           else {
             strcpy(tx.message, "TARE FAILED LC_2");
-            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           }
 
           break;
         default:
           strcpy(tx.message, "ENTER A VALID CODE");
-          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
         }
       }else {
         strcpy(tx.message, "INVALID INPUT");
-        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
       }
 
       
@@ -259,30 +257,31 @@ void loop() {
 //METHODS ******************************************************************
 
 void runTest(int direction){
+  float amps_ {0.0}, volts_ {0.0}, force_ {0.0};
 
   for (int i{0}; i < reading_num; ){
     LoadCell_01.update();
     LoadCell_02.update();
     
-    thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
+    //thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
     
     if(millis() > t + (DATA_INTERVAL / reading_num)){
       
       switch (direction){
         case FORWARD_: 
-          Serial.print("LOAD_CELL 1: "); Serial.print(LoadCell_01.getData());
+          force_ = LoadCell_01.getData();
           break;
         
         case REVERSE_:
-          Serial.print("  LOAD_CELL #2:"); Serial.print(LoadCell_02.getData());
+          force_ = LoadCell_02.getData();
           break;
       }
 
       volts_ = voltage_Calculation();
       amps_ = amperage_Calculation();
       
-      Serial.print("  VOLTAGE: "); Serial.print(volts_);
-      Serial.print("  AMPERAGE: "); Serial.println(amps_);
+      snprintf(tx.message, sizeof(tx.message), "FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", force_, volts_, amps_);
+      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
       
       t = millis();
       
