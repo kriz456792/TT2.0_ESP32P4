@@ -8,8 +8,6 @@
 
 //TODO: GUI 
 
-//TODO: MULTITHREAD COMUNICATION & OPERATION ... WIP CHRIS
-
 //TODO: MODIFY RUN TEST METHOD TO RUN TEST FROM 0 POWER TO 100 POWER BOTH IN REVERSE AND FORDWARD | MAIN TEST: CUSTOM TEST SEQUENCE OPTION 
 
 //TODO: IMPROVE VOLTAGE & AMPERAGE CALCULATION METHOD //adds extra sample(s) to the dataset removes peak/valley 
@@ -82,11 +80,11 @@ void usbTask(void *parameter){
   UsbMessage msg; //array to hold messge
 
   //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
-  Serial.println("ENTER 603 TO RUN TEST.");
-  Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
-  Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
-  Serial.println("ENTER 306 TO TARE CELLS");
-  Serial.print("ENTER CHOICE:");
+  // Serial.println("ENTER 603 TO RUN TEST.");
+  // Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
+  // Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
+  // Serial.println("ENTER 306 TO TARE CELLS");
+  // Serial.print("ENTER CHOICE:");
 
   while(true){
     if(Serial.available()){
@@ -94,14 +92,14 @@ void usbTask(void *parameter){
 
       input.toCharArray(msg.message, sizeof(msg.message));
 
-      xQueueSend(usbRxQueue, &msg, portMAX_DELAY);
+      xQueueSend(usbRxQueue, &msg, pdMS_TO_TICKS(100));
     }
 
     if(xQueueReceive(usbTxQueue, &msg, 0)){
       Serial.println(msg.message);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(2));
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -118,54 +116,56 @@ void applicationTask(void *parameter){
       char *end;
       long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
       int speed_temp {0};
-      double test_x {0};
 
       if (*end == '\0')
       {
         switch(user_input)
         {
         case RUN_TEST:
-          test_x = ads_module.readADC_SingleEnded(ADS_01);
-          snprintf(tx.message, sizeof(tx.message), "%.2f", test_x);
-          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          runTest(FORWARD_);
+          delay(10000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
+          runTest(REVERSE_);
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
-          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
           //calibrate_loadCell(LoadCell_01, LC_01);
           //calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
           strcpy(tx.message, "TODO: CREATE DEVELOPER MODE LOGIC");
-          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
           break;
         case TARE_CELLS:
-          
-          LoadCell_01.tareNoDelay();
-          LoadCell_02.tareNoDelay();
+          LoadCell_01.tare();
+          LoadCell_02.tare();
 
           //check if last tare operation is complete
           if (LoadCell_01.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
-            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+            xQueueSend(usbTxQueue, &tx, 0);
           }
           else{
-            strcpy(tx.message, "TARE FAILED");
-            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+            strcpy(tx.message, "TARE FAILED LC_1");
+            xQueueSend(usbTxQueue, &tx, 0);
           }
           if (LoadCell_02.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
-            xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
+          }
+          else {
+            strcpy(tx.message, "TARE FAILED LC_2");
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
           }
 
           break;
         default:
           strcpy(tx.message, "ENTER A VALID CODE");
-          xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
         }
       }else {
         strcpy(tx.message, "INVALID INPUT");
-        xQueueSend(usbTxQueue, &tx, portMAX_DELAY);
+        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(100));
       }
 
       
@@ -194,14 +194,14 @@ void setup() {
     Serial.println("ADS1115 Module Initialized Succesfully!!!");
   }
 
-  ads_module.setGain(GAIN_ONE); //TODO: CHANGE AND TEST -> GAIN_TWOTHIRDS
+  ads_module.setGain(GAIN_TWOTHIRDS); //TODO: CHANGE GAIN_ONE AND TEST -> GAIN_TWOTHIRDS
 
   float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
   unsigned long stabilizing_time {2000};
   boolean _tare { true };
   byte loadcell_01_ready {0}, loadcell_02_ready {0};
 
-  /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM.
+  /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM. //TODO: UNCOMMENT, CALIBRATE LOAD CELLS & SAVE TO EEPROM
   EEPROM.begin(512);
   EEPROM.get(EEPROM_ADDR_VAL_01, calibrationValue_01);
   EEPROM.get(EEPROM_ADDR_VAL_02, calibrationValue_02);
@@ -231,8 +231,8 @@ void setup() {
   delay(7000); // allow thruster to settle
 
   Serial.println("Startup is complete...");
-  usbTxQueue = xQueueCreate(10, sizeof(UsbMessage));
-  usbRxQueue = xQueueCreate(40, sizeof(UsbMessage));
+  usbTxQueue = xQueueCreate(100, sizeof(UsbMessage));
+  usbRxQueue = xQueueCreate(100, sizeof(UsbMessage));
 
   xTaskCreatePinnedToCore(usbTask, "USB", 4096, NULL, 3, NULL,0);
   xTaskCreatePinnedToCore(applicationTask, "Application", 4096, NULL, 2, NULL, 1);
@@ -240,17 +240,20 @@ void setup() {
 
 //MAIN LOOP ***********************************************************
 void loop() {
-  /*
-  LoadCell_01.update();
-  LoadCell_02.update();
-
-  thruster_motor.writeMicroseconds(1560);
   
-  Serial.print("LOAD_CELL #1: "); Serial.print(LoadCell_01.getData());
-  Serial.print("  LOAD_CELL #2: "); Serial.print(LoadCell_02.getData());
-  Serial.print("  VOLTAGE: "); Serial.print(voltage_Calculation());
-  Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
-  */
+  //RAW CODE TO TEST FOR FUNCTIONALITY..
+
+
+  // LoadCell_01.update();
+  // LoadCell_02.update();
+
+  // thruster_motor.writeMicroseconds(1560);
+  
+  // Serial.print("LOAD_CELL #1: "); Serial.print(LoadCell_01.getData());
+  // Serial.print("  LOAD_CELL #2: "); Serial.print(LoadCell_02.getData());
+  // Serial.print("  VOLTAGE: "); Serial.print(voltage_Calculation());
+  // Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
+  
 }
 
 //METHODS ******************************************************************
