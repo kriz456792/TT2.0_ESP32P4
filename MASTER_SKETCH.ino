@@ -120,6 +120,7 @@ void applicationTask(void *parameter){
         {
         case RUN_TEST:
           runTest(FORWARD_);
+          thruster_motor.writeMicroseconds(1500);
           delay(3000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
           runTest(REVERSE_);
           break;
