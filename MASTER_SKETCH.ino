@@ -64,7 +64,6 @@ typedef struct{
 uint64_t t {0}; //t keeps track of current millis the program has been running.
 int speed_PWM {MIDDLE_POINT_PWM};
 int speed_percentage {0}; 
-int reading_num {10}; //20 collection per second. DEFAULT is 10/Sec
 UsbMessage rx, tx, msg; //Structures to hold messages.
 
 //FUNCTION SIGNATURES...
@@ -121,8 +120,8 @@ void applicationTask(void *parameter){
         {
         case RUN_TEST:
           runTest(FORWARD_);
-          delay(10000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
-          runTest(REVERSE_);
+          //delay(1000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
+          //runTest(REVERSE_);
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
@@ -141,11 +140,11 @@ void applicationTask(void *parameter){
           //check if last tare operation is complete
           if (LoadCell_01.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #1 COMPLETE");
-            xQueueSend(usbTxQueue, &tx, 10);
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           }
           else{
             strcpy(tx.message, "TARE FAILED LC_1");
-            xQueueSend(usbTxQueue, &tx, 10);
+            xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           }
           if (LoadCell_02.getTareStatus() == true) {
             strcpy(tx.message, "TARE LOAD CELL #2 COMPLETE");
@@ -258,37 +257,42 @@ void loop() {
 
 void runTest(int direction){
   float amps_ {0.0}, volts_ {0.0}, force_ {0.0};
+  int reading_num {10};
 
-  for (int i{0}; i < reading_num; ){
-    LoadCell_01.update();
-    LoadCell_02.update();
-    
-    //thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
-    
-    if(millis() > t + (DATA_INTERVAL / reading_num)){
+  for (int j {0}; i < 40; j++){
+    //TODO: INCREASE PWM +10
+    for (int i{0}; i < reading_num; ){
+      LoadCell_01.update();
+      LoadCell_02.update();
       
-      switch (direction){
-        case FORWARD_: 
-          force_ = LoadCell_01.getData();
-          break;
+      thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
+      
+      if(millis() > t + 100){
         
-        case REVERSE_:
-          force_ = LoadCell_02.getData();
-          break;
+        switch (direction){
+          case FORWARD_: 
+            force_ = LoadCell_01.getData();
+            break;
+          
+          case REVERSE_:
+            force_ = LoadCell_02.getData();
+            break;
+        }
+
+        volts_ = voltage_Calculation();
+        amps_ = amperage_Calculation();
+        
+        snprintf(tx.message, sizeof(tx.message), "FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", force_, volts_, amps_);
+        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+        
+        t = millis();
+        
+        i++;
       }
 
-      volts_ = voltage_Calculation();
-      amps_ = amperage_Calculation();
-      
-      snprintf(tx.message, sizeof(tx.message), "FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", force_, volts_, amps_);
-      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-      
-      t = millis();
-      
-      i++;
     }
-
   }
+  
 
 }
 
