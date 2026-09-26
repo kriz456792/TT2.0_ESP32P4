@@ -24,7 +24,7 @@
 #define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
 #define SIGNAL_PIN_23 23 //TODO: ASSIGN TASK...
-#define ESC_PIN 14 //THRUSTER PIN
+#define ESC_PIN 4 //THRUSTER PIN
 
 //ADDRESSES
 #define EEPROM_ADDR_VAL_01 0 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
@@ -120,8 +120,8 @@ void applicationTask(void *parameter){
         {
         case RUN_TEST:
           runTest(FORWARD_);
-          //delay(1000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
-          //runTest(REVERSE_);
+          delay(3000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
+          runTest(REVERSE_);
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
@@ -259,31 +259,41 @@ void runTest(int direction){
   float amps_ {0.0}, volts_ {0.0}, force_ {0.0};
   int reading_num {10};
 
-  for (int j {0}; i < 40; j++){
-    //TODO: INCREASE PWM +10
+  t = millis();
+  speed_PWM = 1500;
+
+  for (int j {0}; j < 40; j++){
+    
+    switch (direction){
+      case FORWARD_: 
+        speed_PWM += 10;    
+        break;
+          
+      case REVERSE_:
+        speed_PWM -= 10;
+        break;
+    }
+
     for (int i{0}; i < reading_num; ){
       LoadCell_01.update();
       LoadCell_02.update();
       
       thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
       
-      if(millis() > t + 100){
+      if(millis() > t + 50){
         
         switch (direction){
           case FORWARD_: 
-            force_ = LoadCell_01.getData();
+            force_ += LoadCell_01.getData();
             break;
           
           case REVERSE_:
-            force_ = LoadCell_02.getData();
+            force_ += LoadCell_02.getData();
             break;
         }
 
-        volts_ = voltage_Calculation();
-        amps_ = amperage_Calculation();
-        
-        snprintf(tx.message, sizeof(tx.message), "FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", force_, volts_, amps_);
-        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+        volts_ += voltage_Calculation();
+        amps_ += amperage_Calculation();
         
         t = millis();
         
@@ -291,6 +301,13 @@ void runTest(int direction){
       }
 
     }
+    
+    force_ /= reading_num;
+    volts_ /= reading_num;
+    amps_ /= reading_num;
+
+    snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_, volts_, amps_);
+    xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
   }
   
 
@@ -363,6 +380,7 @@ float amperage_Calculation(){
 }
 
 void getUserInputs(){
+  float reading_num {0};
   while (1) {
     Serial.print("Enter Power %: ");
     
