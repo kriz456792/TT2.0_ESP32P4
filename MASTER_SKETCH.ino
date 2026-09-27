@@ -23,7 +23,7 @@
 #define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
 #define SIGNAL_PIN_23 23 //TODO: ASSIGN TASK...
-#define ESC_PIN 4 //THRUSTER PIN
+#define ESC_PIN 14 //THRUSTER PIN
 
 //ADDRESSES
 #define EEPROM_ADDR_VAL_01 0 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
