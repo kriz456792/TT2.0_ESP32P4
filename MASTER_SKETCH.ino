@@ -19,7 +19,6 @@
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
-#define HX711_RATE_PIN 3 //PIN TO CONTROL RATE ON LCs LOW | HIGH SPS
 #define HX711_DOUT_02 4 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
 #define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
@@ -34,7 +33,6 @@
 #define SAMPLE_RATE_VOLT 10 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define SAMPLE_RATE_AMP 10 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
-#define DATA_INTERVAL 800 //Every second we collect data based on the number of times we want, default is 20 times per second. TODO: FIND WAY TO IMPROVE DATA INTERVAL COLLECTION
 #define FORWARD_ 201
 #define REVERSE_ 402
 #define RUN_TEST 603
@@ -120,7 +118,7 @@ void applicationTask(void *parameter){
         {
         case RUN_TEST:
           runTest(FORWARD_);
-          thruster_motor.writeMicroseconds(1500);
+          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
           delay(3000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
           runTest(REVERSE_);
           break;
@@ -261,7 +259,7 @@ void runTest(int direction){
   int reading_num {10};
 
   t = millis();
-  speed_PWM = 1500;
+  speed_PWM = MIDDLE_POINT_PWM;
 
   for (int j {0}; j < 40; j++){
     
@@ -378,50 +376,6 @@ float amperage_Calculation(){
   }
 
   return (total - (min + max)) / (SAMPLE_RATE_AMP - 2) / AMPERAGE_RESOLUTION;
-}
-
-void getUserInputs(){
-  float reading_num {0};
-  while (1) {
-    Serial.print("Enter Power %: ");
-    
-    while (Serial.available() == 0) {
-      delay(10);
-    }
-    
-    speed_percentage = Serial.parseInt();
-
-    if (speed_percentage >= 1 && speed_percentage <= 100) {
-      Serial.println(speed_percentage);
-      break;
-    }
-    else{
-      Serial.println(speed_percentage);
-      Serial.println(" Input NOT Valid. Enter # 1 - 100");
-    }
-
-  }
-
-  while (1) {
-    Serial.print("Enter Desired # of Readings: ");
-
-    while (Serial.available() == 0) {
-      delay(10);
-    }
-
-    reading_num = Serial.parseInt();
-
-    if (reading_num >= 5 && reading_num <= 30){
-      Serial.println(reading_num);
-      break;
-    }
-    else{
-      Serial.println(reading_num);
-      Serial.println("Input NOT Valid. Enter # 1 - 100");
-    }
-
-  }
-
 }
 
 void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
