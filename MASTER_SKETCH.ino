@@ -6,12 +6,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-//TODO: GUI 
-
-//TODO: MODIFY RUN TEST METHOD TO RUN TEST FROM 0 POWER TO 100 POWER BOTH IN REVERSE AND FORDWARD | MAIN TEST: CUSTOM TEST SEQUENCE OPTION 
-
-//TODO: IMPROVE VOLTAGE & AMPERAGE CALCULATION METHOD //adds extra sample(s) to the dataset removes peak/valley 
-
 //TODO: DEVELOPER MODE LOGIC NEEDED | DYNAMIC INPUT FOR SPEED CONTROL 
 
 //PINS
@@ -42,8 +36,9 @@
 #define LC_01 111
 #define LC_02 222
 
-const double VOLTAGE_RESOLUTION {.200}; 
-const double AMPERAGE_RESOLUTION {.060}; 
+constexpr float VOLTAGE_RESOLUTION = .2f; 
+constexpr float ACS712_ZERO_VOLTAGE = 2.55f; //midpoint reading on ads from Amp module
+constexpr float AMPERAGE_RESOLUTION = 0.066f;  // 66 mV/A  
 
 //GLOBAL OBJECTS...
 HX711_ADC LoadCell_01(HX711_DOUT_01, HX711_SCK_01);
@@ -190,7 +185,7 @@ void setup() {
     Serial.println("ADS1115 Module Initialized Succesfully!!!");
   }
 
-  ads_module.setGain(GAIN_TWOTHIRDS); //TODO: CHANGE GAIN_ONE AND TEST -> GAIN_TWOTHIRDS
+  ads_module.setGain(GAIN_ONE); // Gain sets the ADS1115 input voltage range; higher gain gives better resolution but lowers the maximum measurable voltage.
 
   float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
   unsigned long stabilizing_time {2000};
@@ -334,48 +329,73 @@ void developer_mode(int speed_){
   }
 }
 
-float voltage_Calculation(){
-  double min{10.0}, max{0.0}, sample{0.0}, total{0.0}, voltage{0.0};
+float voltage_Calculation() {
 
-  for (int i {0}; i < SAMPLE_RATE_VOLT; i++){
-    sample = ads_module.readADC_SingleEnded(ADS_00);
-    voltage = ads_module.computeVolts(sample);
+  if (SAMPLE_RATE_VOLT < 4) {
+    return 0.0f;
+  }
 
-    if (SAMPLE_RATE_VOLT >= 4){ //Rate must be greater than or equal to 4.
-      if (voltage < min) { min = voltage;}
-      if (voltage > max) { max = voltage;}
+  float minVoltage = 0.0f;
+  float maxVoltage = 0.0f;
+  float total = 0.0f;
+
+  for (int i = 0; i < SAMPLE_RATE_VOLT; i++) {
+
+    int16_t rawSample = ads_module.readADC_SingleEnded(ADS_00);
+    float voltage = ads_module.computeVolts(rawSample);
+
+    // Initialize min/max from the first real reading
+    if (i == 0) {
+      minVoltage = voltage;
+      maxVoltage = voltage;
     }
-    else{
-      Serial.println("Sample rate too low...");
-      while(1);
+    else {
+      if (voltage < minVoltage) minVoltage = voltage;
+      if (voltage > maxVoltage) maxVoltage = voltage;
     }
 
     total += voltage;
   }
-  return ((total - (min + max)) / (SAMPLE_RATE_VOLT - 2)) / VOLTAGE_RESOLUTION;
+
+  float average = (total - minVoltage - maxVoltage) / (SAMPLE_RATE_VOLT - 2);
+
+  return average / VOLTAGE_RESOLUTION;
 }
 
-float amperage_Calculation(){
-  double min{10.0}, max{0.0}, sample{0.0}, total{0.0}, voltage{0.0};
+float amperage_Calculation() {
 
-  for (int i {0}; i < SAMPLE_RATE_AMP; i++){
-    sample = ads_module.readADC_SingleEnded(ADS_01);
-    voltage = ads_module.computeVolts(sample) - (5.1 / 2);
+  if (SAMPLE_RATE_AMP < 4) {
+    return 0.0f;
+  }
 
-    if(SAMPLE_RATE_AMP >=4){
-      if (voltage < min) {min = voltage;}
-      if (voltage > max) {max = voltage;}
+  float minVoltage = 0.0f;
+  float maxVoltage = 0.0f;
+  float total = 0.0f;
+
+  for (int i = 0; i < SAMPLE_RATE_AMP; i++) {
+
+    int16_t rawSample = ads_module.readADC_SingleEnded(ADS_01);
+
+    // Convert ADC reading to voltage and remove the ACS712 zero-current offset
+    float voltage = ads_module.computeVolts(rawSample) - ACS712_ZERO_VOLTAGE;
+
+    if (i == 0) {
+      minVoltage = voltage;
+      maxVoltage = voltage;
     }
-    else{
-      Serial.println("Sample rate too low...");
-      while(1);
+    else {
+      if (voltage < minVoltage) minVoltage = voltage;
+      if (voltage > maxVoltage) maxVoltage = voltage;
     }
 
     total += voltage;
-
   }
 
-  return (total - (min + max)) / (SAMPLE_RATE_AMP - 2) / AMPERAGE_RESOLUTION;
+  float averageVoltage =
+      (total - minVoltage - maxVoltage) /
+      (SAMPLE_RATE_AMP - 2);
+
+  return averageVoltage / AMPERAGE_RESOLUTION;
 }
 
 void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
