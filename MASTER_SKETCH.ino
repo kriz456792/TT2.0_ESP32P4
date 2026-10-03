@@ -6,8 +6,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-//TODO: DEVELOPER MODE LOGIC NEEDED | DYNAMIC INPUT FOR SPEED CONTROL 
-
 //PINS
 #define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
@@ -24,15 +22,20 @@
 #define EEPROM_ADDR_VAL_02 4 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
 
 //PROCEDURAL MACROS
-#define SAMPLE_RATE_VOLT 10 //Number of samples taken from module to average a reading. Lowest value is 4.
-#define SAMPLE_RATE_AMP 10 //Number of samples taken from module to average a reading. Lowest value is 4.
+#define SAMPLE_RATE_VOLT 12 //Number of samples taken from module to average a reading. Lowest value is 4.
+#define SAMPLE_RATE_AMP 12 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
+
 #define FORWARD_ 201
 #define REVERSE_ 402
 #define RUN_TEST 603
 #define CALIBRATE_L_CELLS 804
 #define DEVELOPER_MODE 105
 #define TARE_CELLS 306
+#define INCREASE_PWM 507
+#define DECREASE_PWM 708
+#define STOP_PWM 909
+#define RETURN_EXIT 100
 #define LC_01 111
 #define LC_02 222
 
@@ -55,7 +58,6 @@ typedef struct{
 
 //OTHER VARIABLES...
 uint64_t t {0}; //t keeps track of current millis the program has been running.
-int speed_PWM {MIDDLE_POINT_PWM};
 int speed_percentage {0}; 
 UsbMessage rx, tx, msg; //Structures to hold messages.
 
@@ -69,13 +71,6 @@ void calibrate_loadCell(HX711_ADC& LoadCell);
 
 //PARALLEL PROGRAMS RUNNING IN A CORE EACH---------------------------------------------------------------------------------------------------------------
 void usbTask(void *parameter){
-
-  //OPTIONALITY: RUN TEST -> RUN_TEST | CALIBRATE LOAD CELLS -> CALIBRATE_L_CELLS | DEVELOPER MODE -> DEVELOPER_MODE | TARE CELLS -> TARE_CELLS
-  // Serial.println("ENTER 603 TO RUN TEST.");
-  // Serial.println("ENTER 804 TO CALIBRATE LOAD CELLS");
-  // Serial.println("ENTER 105 TO ENTER DEVELOPER MODE");
-  // Serial.println("ENTER 306 TO TARE CELLS");
-  // Serial.print("ENTER CHOICE:");
 
   while(true){
     if(Serial.available()){
@@ -124,8 +119,7 @@ void applicationTask(void *parameter){
           //calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
-          strcpy(tx.message, "TODO: CREATE DEVELOPER MODE LOGIC");
-          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+          developer_mode();
           break;
         case TARE_CELLS:
           LoadCell_01.tare();
@@ -158,24 +152,18 @@ void applicationTask(void *parameter){
         strcpy(tx.message, "INVALID INPUT");
         xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
       }
-
-      
-      
     }
-
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
+
 //---------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
 void setup() {
   Serial.begin(115200); delay(10);
   Serial.print("Setting UP...");
 
   //OTHER OPTIONS: RATE_ADS1115_8SPS | RATE_ADS1115_32SPS | RATE_ADS1115_475SPS | RATE_ADS1115_860SPS...
   //DEFAULT is 128 Samples-Per-Second. Higher rate makes the program faster but less reliable data...
-
   ads_module.setDataRate(RATE_ADS1115_860SPS); // 250 SPS
 
   if(!ads_module.begin()){
@@ -254,7 +242,7 @@ void runTest(int direction){
   int reading_num {10};
 
   t = millis();
-  speed_PWM = MIDDLE_POINT_PWM;
+  int speed_PWM = MIDDLE_POINT_PWM;
 
   for (int j {0}; j < 40; j++){
     
@@ -303,29 +291,60 @@ void runTest(int direction){
     snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_, volts_, amps_);
     xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
   }
-  
-
 }
 
-void developer_mode(int speed_){
+void developer_mode(){
+  float amps_ {0.0}, volts_ {0.0}, force_LC1 {0.0}, force_LC2 {0.0};
+  int speed_PWM {MIDDLE_POINT_PWM};
+  bool active_ {true};
 
-  while(1){
+  t = millis();
+
+  while(active_){
     LoadCell_01.update();
     LoadCell_02.update();
 
-    thruster_motor.writeMicroseconds(speed_);
-  
-    Serial.print("LOAD_CELL #1: "); Serial.print(LoadCell_01.getData());
-    Serial.print("  LOAD_CELL #2: "); Serial.print(LoadCell_02.getData());
-    Serial.print("  VOLTAGE: "); Serial.print(voltage_Calculation());
-    Serial.print("  AMPERAGE: "); Serial.println(amperage_Calculation());
+    if(xQueueReceive(usbRxQueue, &rx, 0)){
+      
+      char *end;
+      long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
 
-    if (Serial.available() > 0) {
-      char inByte = Serial.read();
-      if (inByte == 'e') {
-        break;
+      if (*end == '\0')
+      {
+        switch(user_input)
+        {
+          case INCREASE_PWM:
+            speed_PWM += 10;
+            break;
+          case DECREASE_PWM:
+            speed_PWM -= 10;
+            break;
+          case STOP_PWM:
+            speed_PWM = MIDDLE_POINT_PWM;
+            break;
+          case RETURN_EXIT:
+            speed_PWM = MIDDLE_POINT_PWM;
+            active_ = false;  
+            break;        
+          default:
+            break;
+        }
       }
     }
+
+    thruster_motor.writeMicroseconds(speed_PWM);
+
+    if(millis() > t + 50){
+      force_LC1 = LoadCell_01.getData();
+      force_LC2 = LoadCell_02.getData();
+      volts_ = voltage_Calculation();
+      amps_ = amperage_Calculation();
+      
+      t = millis();
+    }
+
+    snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC1:%2.f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
+    xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
   }
 }
 
@@ -401,6 +420,7 @@ float amperage_Calculation() {
 void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
 
   Serial.println("Start Calibration");
+  
   switch (LC_num) {
     case LC_01:
       Serial.println("Place Load Cell One on a level stable surface");
@@ -409,6 +429,7 @@ void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
       Serial.println("Place Load Cell Two on a level stable surface");
       break;
   }
+
   Serial.println("Remove Any Load");
   Serial.println("Send 't' from serial monitor to set the tare offset");
 
