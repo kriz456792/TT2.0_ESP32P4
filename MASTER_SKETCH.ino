@@ -11,8 +11,8 @@
 #define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
-#define HX711_DOUT_02 4 //ESP32 PIN 2. Assigned to 2nd Load Cell Chip
-#define HX711_SCK_02 2 //ESP32 PIN 4. Assigned to 2nd Load Cell Chip
+#define HX711_DOUT_02 4 //ESP32 PIN . Assigned to 2nd Load Cell Chip
+#define HX711_SCK_02 2 //ESP32 PIN . Assigned to 2nd Load Cell Chip
 #define SIGNAL_PIN_22 22 //TODO: ASSIGN TASK...
 #define SIGNAL_PIN_23 23 //TODO: ASSIGN TASK...
 #define ESC_PIN 14 //THRUSTER PIN
@@ -38,6 +38,9 @@
 #define RETURN_EXIT 100
 #define LC_01 111
 #define LC_02 222
+#define READY_ 333
+#define SUCCESS_ 444
+#define ERROR_ 555
 
 constexpr float VOLTAGE_RESOLUTION = .2f; 
 constexpr float ACS712_ZERO_VOLTAGE = 2.55f; //midpoint reading on ads from Amp module
@@ -341,10 +344,9 @@ void developer_mode(){
       amps_ = amperage_Calculation();
       
       t = millis();
+      snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC1:%2.f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
+      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
     }
-
-    snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC1:%2.f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
-    xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
   }
 }
 
@@ -418,49 +420,64 @@ float amperage_Calculation() {
 }
 
 void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
+  long known_mass {};
 
-  Serial.println("Start Calibration");
-  
   switch (LC_num) {
     case LC_01:
-      Serial.println("Place Load Cell One on a level stable surface");
+      strcpy(tx.message, "Place Load Cell 1 on a level stable surface");
+      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
       break;
     case LC_02:
-      Serial.println("Place Load Cell Two on a level stable surface");
+      strcpy(tx.message, "Place Load Cell 2 on a level stable surface");
+      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
       break;
   }
 
-  Serial.println("Remove Any Load");
-  Serial.println("Send 't' from serial monitor to set the tare offset");
+  while(true){
+    //LOOP WILL WAIT UNTIL USER SETS THE TT ON IT'S SIDE AND REMOVES ANY LOAD FROM THE LOADCELL & CONFIRMS.
+    LoadCell_01.update();
+    LoadCell_02.update();
 
-  bool _resume = false;
-  while (_resume == false) {
-    LoadCell.update();
-    if (Serial.available() > 0) {
-      if (Serial.available() > 0) {
-        char inByte = Serial.read();
-        if (inByte == 't') {LoadCell.tareNoDelay();}
+    if(xQueueReceive(usbRxQueue, &rx, 0)){
+      
+      char *end;
+      long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
+
+      if (*end == '\0' && user_input == READY_)
+      {
+        LoadCell.tareNoDelay();
+      }
+
+      if (LoadCell.getDataSetStatus() == true) {
+        strcpy(tx.message, "READY_");
+        xQueueSend(usbTxQueue, &tx, 0); 
+        break;
+      }else{
+        strcpy(tx.message, "ERROR_");
+        xQueueSend(usbTxQueue, &tx, 0);
+        return;
       }
     }
-    if (LoadCell.getDataSetStatus() == true) {
-      Serial.println("Tare Load Cell 01 Complete");
-      _resume = true;
-    }
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 
-  Serial.println("Now place known mass on the loadcell 01.");
-  Serial.println("Then send the weight of this mass (i.e 100.0) from serial monitor.");
+  //Serial.println("Now place known mass on the loadcell 01.");
+  //Serial.println("Then send the weight of this mass (i.e 100.0) from serial monitor.");
 
-  float known_mass = 0;
-  _resume = false;
-  while (_resume == false) {
+  while (true) {
+    //LOOP WILL WAIT UNTIL KNOWN MASS IS ON TT AND USER HAS CONFIRMED KNOWN MASS IS ON LOADCELL
     LoadCell.update();
-    if (Serial.available() > 0){
-      known_mass = Serial.parseFloat();
-      if (known_mass != 0){
-        Serial.print("Known mass is: ");
-        Serial.println(known_mass);
-        _resume = true;
+
+    if(xQueueReceive(usbRxQueue, &rx, 0)){
+      
+      char *end;
+      known_mass = strtol(rx.message, &end, 10);  //convert message to intiger 
+
+      if (*end == '\0')
+      {
+        strcpy(tx.message, "SUCCESS_");
+        xQueueSend(usbTxQueue, &tx, 0);
+        break;
       }
     }
   }
@@ -468,68 +485,27 @@ void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
   LoadCell.refreshDataSet();
   float newCalibrationValue = LoadCell.getNewCalibration(known_mass);
 
-  Serial.print("New calibration value has been set to:");
-  Serial.print(newCalibrationValue);
-  Serial.println(", use this as calibration value (calFactor) in your project sketch");
-  Serial.print("Save this value to EEPROM address");
+#if defined(ESP8266) || defined(ESP32)
+  EEPROM.begin(512);
+#endif
   switch (LC_num) {
     case LC_01:
-      Serial.println(EEPROM_ADDR_VAL_01);
+      EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
       break;
     case LC_02:
-      Serial.println(EEPROM_ADDR_VAL_02);
+      EEPROM.put(EEPROM_ADDR_VAL_02, newCalibrationValue);
       break;
   }
-  Serial.println("? y/n");
-
-  _resume = false;
-  while (_resume == false) {
-    if (Serial.available() > 0){
-      char inByte = Serial.read();
-      if (inByte = 'y'){
 #if defined(ESP8266) || defined(ESP32)
-        EEPROM.begin(512);
+  EEPROM.commit();
 #endif
-        switch (LC_num) {
-          case LC_01:
-            EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
-            break;
-          case LC_02:
-            EEPROM.put(EEPROM_ADDR_VAL_02, newCalibrationValue);
-            break;
-        }
-#if defined(ESP8266) || defined(ESP32)
-        EEPROM.commit();
-#endif
-        switch (LC_num) {
-          case LC_01:
-            EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
-            break;
-          case LC_02:
-            EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
-            break;
-        }
-        Serial.print("Value: ");
-        Serial.print(newCalibrationValue);
-        Serial.print("Saved to EEPROM address: ");
-
-        switch (LC_num) {
-          case LC_01:
-            Serial.println(EEPROM_ADDR_VAL_01);
-            break;
-          case LC_02:
-            Serial.println(EEPROM_ADDR_VAL_02);
-            break;
-        }
-
-        _resume = true;
-      }
-      else if (inByte == 'n') {
-        Serial.println("Value not saved to EEPROM");
-        _resume = true;
-      }
-
-    }
+  switch (LC_num) {
+    case LC_01:
+      EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+      break;
+    case LC_02:
+      EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
+      break;
   }
 }
 
