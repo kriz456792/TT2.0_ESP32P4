@@ -114,6 +114,7 @@ void applicationTask(void *parameter){
           thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
           delay(3000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
           runTest(REVERSE_);
+          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
