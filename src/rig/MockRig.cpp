@@ -39,7 +39,7 @@ void MockRig::runFullTest() {
   }
 }
 
-void MockRig::runDeveloperMode() {
+void MockRig::developerMode() {
   int speed_PWM = MIDDLE_POINT_PWM;
   bool active = true;
   unsigned long lastSample = millis();
