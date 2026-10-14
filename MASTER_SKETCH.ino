@@ -5,6 +5,8 @@
 #include "USB.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "Rig.h"
+#include "RigFactory.h"
 
 //PINS
 #define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
@@ -66,11 +68,13 @@ UsbMessage rx, tx, msg; //Structures to hold messages.
 
 //FUNCTION SIGNATURES...
 void runTest(int direction);
-void developer_mode(int speed_);
+void developer_mode();
 float voltage_Calculation();
 float amperage_Calculation();
 void getUserInputs();
 void calibrate_loadCell(HX711_ADC& LoadCell);
+
+Rig* rig = createRig();
 
 //PARALLEL PROGRAMS RUNNING IN A CORE EACH---------------------------------------------------------------------------------------------------------------
 void usbTask(void *parameter){
@@ -96,8 +100,7 @@ void applicationTask(void *parameter){
 
   while(true){
 
-    LoadCell_01.update();
-    LoadCell_02.update();
+    rig->update();
 
     if(xQueueReceive(usbRxQueue, &rx, 0)){
       
@@ -110,11 +113,7 @@ void applicationTask(void *parameter){
         switch(user_input)
         {
         case RUN_TEST:
-          runTest(FORWARD_);
-          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
-          delay(3000); //Wait 10 seconds to allow water to settle. | Halts everythong, verify load cell update issues.
-          runTest(REVERSE_);
-          thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
+          rig->runFullTest();
           break;
         case CALIBRATE_L_CELLS:
           strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
@@ -123,7 +122,7 @@ void applicationTask(void *parameter){
           //calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
-          developer_mode();
+          rig->runDeveloperMode();
           break;
         case TARE_CELLS:
           LoadCell_01.tare();
@@ -165,53 +164,7 @@ void applicationTask(void *parameter){
 void setup() {
   Serial.begin(115200); delay(10);
   Serial.print("Setting UP...");
-
-  //OTHER OPTIONS: RATE_ADS1115_8SPS | RATE_ADS1115_32SPS | RATE_ADS1115_475SPS | RATE_ADS1115_860SPS...
-  //DEFAULT is 128 Samples-Per-Second. Higher rate makes the program faster but less reliable data...
-  ads_module.setDataRate(RATE_ADS1115_860SPS); // 250 SPS
-
-  if(!ads_module.begin()){
-    Serial.println("Failed to Initialize ADS Module");
-    while(1);
-  } else{
-    Serial.println("ADS1115 Module Initialized Succesfully!!!");
-  }
-
-  ads_module.setGain(GAIN_ONE); // Gain sets the ADS1115 input voltage range; higher gain gives better resolution but lowers the maximum measurable voltage.
-
-  float calibrationValue_01 {200.0}, calibrationValue_02 {200.0}; //Calibration Values for Load Cell 1 and 2
-  unsigned long stabilizing_time {2000};
-  boolean _tare { true };
-  byte loadcell_01_ready {0}, loadcell_02_ready {0};
-
-  /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM. //TODO: UNCOMMENT, CALIBRATE LOAD CELLS & SAVE TO EEPROM
-  EEPROM.begin(512);
-  EEPROM.get(EEPROM_ADDR_VAL_01, calibrationValue_01);
-  EEPROM.get(EEPROM_ADDR_VAL_02, calibrationValue_02);
-  */
-
-  LoadCell_01.begin();
-  LoadCell_02.begin();
-
-  while (loadcell_01_ready + loadcell_02_ready < 2) {
-    if (!loadcell_01_ready){ loadcell_01_ready = LoadCell_01.startMultiple(stabilizing_time, _tare); }
-    if (!loadcell_02_ready){ loadcell_02_ready = LoadCell_02.startMultiple(stabilizing_time, _tare); }
-  }
-
-  if (LoadCell_01.getTareTimeoutFlag()){
-    Serial.println("Timeout, check MCU>HX711 no.01 wiring and pins");
-  }
-  if (LoadCell_02.getTareTimeoutFlag()){
-    Serial.println("Timeout, check MCU>HX711 no.02 wiring and pins");
-  }
-
-  LoadCell_01.setCalFactor(calibrationValue_01);
-  LoadCell_02.setCalFactor(calibrationValue_02);
-
-  thruster_motor.setPeriodHertz(100);
-  thruster_motor.attach(ESC_PIN, 1100, 1900); //PIN | min | max 
-  thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM); //middlepoint is STOP.
-  delay(7000); // allow thruster to settle
+  rig->begin();
 
   Serial.println("Startup is complete...");
   usbTxQueue = xQueueCreate(100, sizeof(UsbMessage));
@@ -309,7 +262,7 @@ void developer_mode(){
     LoadCell_02.update();
 
     if(xQueueReceive(usbRxQueue, &rx, 0)){
-      
+
       char *end;
       long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
 
@@ -328,8 +281,8 @@ void developer_mode(){
             break;
           case RETURN_EXIT:
             speed_PWM = MIDDLE_POINT_PWM;
-            active_ = false;  
-            break;        
+            active_ = false;
+            break;
           default:
             break;
         }
@@ -343,9 +296,9 @@ void developer_mode(){
       force_LC2 = LoadCell_02.getData();
       volts_ = voltage_Calculation();
       amps_ = amperage_Calculation();
-      
+
       t = millis();
-      snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC1:%2.f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
+      snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC2:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
       xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
     }
   }
