@@ -5,12 +5,10 @@
 #include "USB.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include "Rig.h"
-#include "RigFactory.h"
+#include "src/rig/Rig.h"
+#include "src/rig/RigFactory.h"
 
 //PINS
-#define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
-#define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
 #define HX711_DOUT_01 17 //ESP32 PIN 5. Assigned to Load Cell Chip
 #define HX711_SCK_01 18 //ESP32 PIN 18. Assigned to Load Cell Chip
 #define HX711_DOUT_02 4 //ESP32 PIN . Assigned to 2nd Load Cell Chip
@@ -24,8 +22,6 @@
 #define EEPROM_ADDR_VAL_02 4 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
 
 //PROCEDURAL MACROS
-#define SAMPLE_RATE_VOLT 12 //Number of samples taken from module to average a reading. Lowest value is 4.
-#define SAMPLE_RATE_AMP 12 //Number of samples taken from module to average a reading. Lowest value is 4.
 #define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
 
 #define FORWARD_ 201
@@ -43,10 +39,6 @@
 #define READY_ 333
 #define SUCCESS_ 444
 #define ERROR_ 555
-
-constexpr float VOLTAGE_RESOLUTION = .2f; 
-constexpr float ACS712_ZERO_VOLTAGE = 2.55f; //midpoint reading on ads from Amp module
-constexpr float AMPERAGE_RESOLUTION = 0.066f;  // 66 mV/A  
 
 //GLOBAL OBJECTS...
 HX711_ADC LoadCell_01(HX711_DOUT_01, HX711_SCK_01);
@@ -67,10 +59,6 @@ int speed_percentage {0};
 UsbMessage rx, tx, msg; //Structures to hold messages.
 
 //FUNCTION SIGNATURES...
-void runTest(int direction);
-void developer_mode();
-float voltage_Calculation();
-float amperage_Calculation();
 void getUserInputs();
 void calibrate_loadCell(HX711_ADC& LoadCell);
 
@@ -122,7 +110,7 @@ void applicationTask(void *parameter){
           //calibrate_loadCell(LoadCell_02, LC_02);
           break;
         case DEVELOPER_MODE:
-          rig->runDeveloperMode();
+          rig->developerMode();
           break;
         case TARE_CELLS:
           LoadCell_01.tare();
@@ -193,185 +181,6 @@ void loop() {
 }
 
 //METHODS ******************************************************************
-
-void runTest(int direction){
-  float amps_ {0.0}, volts_ {0.0}, force_ {0.0};
-  int reading_num {10};
-
-  t = millis();
-  int speed_PWM = MIDDLE_POINT_PWM;
-
-  for (int j {0}; j < 40; j++){
-    
-    switch (direction){
-      case FORWARD_: 
-        speed_PWM += 10;    
-        break;
-          
-      case REVERSE_:
-        speed_PWM -= 10;
-        break;
-    }
-
-    for (int i{0}; i < reading_num; ){
-      LoadCell_01.update();
-      LoadCell_02.update();
-      
-      thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
-      
-      if(millis() > t + 50){
-        
-        switch (direction){
-          case FORWARD_: 
-            force_ += LoadCell_01.getData();
-            break;
-          
-          case REVERSE_:
-            force_ += LoadCell_02.getData();
-            break;
-        }
-
-        volts_ += voltage_Calculation();
-        amps_ += amperage_Calculation();
-        
-        t = millis();
-        
-        i++;
-      }
-
-    }
-    
-    force_ /= reading_num;
-    volts_ /= reading_num;
-    amps_ /= reading_num;
-
-    snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_, volts_, amps_);
-    xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-  }
-}
-
-void developer_mode(){
-  float amps_ {0.0}, volts_ {0.0}, force_LC1 {0.0}, force_LC2 {0.0};
-  int speed_PWM {MIDDLE_POINT_PWM};
-  bool active_ {true};
-
-  t = millis();
-
-  while(active_){
-    LoadCell_01.update();
-    LoadCell_02.update();
-
-    if(xQueueReceive(usbRxQueue, &rx, 0)){
-
-      char *end;
-      long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
-
-      if (*end == '\0')
-      {
-        switch(user_input)
-        {
-          case INCREASE_PWM:
-            speed_PWM += 10;
-            break;
-          case DECREASE_PWM:
-            speed_PWM -= 10;
-            break;
-          case STOP_PWM:
-            speed_PWM = MIDDLE_POINT_PWM;
-            break;
-          case RETURN_EXIT:
-            speed_PWM = MIDDLE_POINT_PWM;
-            active_ = false;
-            break;
-          default:
-            break;
-        }
-      }
-    }
-
-    thruster_motor.writeMicroseconds(speed_PWM);
-
-    if(millis() > t + 50){
-      force_LC1 = LoadCell_01.getData();
-      force_LC2 = LoadCell_02.getData();
-      volts_ = voltage_Calculation();
-      amps_ = amperage_Calculation();
-
-      t = millis();
-      snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE_LC1:%.2f,FORCE_LC2:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_LC1, force_LC2, volts_, amps_);
-      xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-    }
-  }
-}
-
-float voltage_Calculation() {
-
-  if (SAMPLE_RATE_VOLT < 4) {
-    return 0.0f;
-  }
-
-  float minVoltage = 0.0f;
-  float maxVoltage = 0.0f;
-  float total = 0.0f;
-
-  for (int i = 0; i < SAMPLE_RATE_VOLT; i++) {
-
-    int16_t rawSample = ads_module.readADC_SingleEnded(ADS_00);
-    float voltage = ads_module.computeVolts(rawSample);
-
-    // Initialize min/max from the first real reading
-    if (i == 0) {
-      minVoltage = voltage;
-      maxVoltage = voltage;
-    }
-    else {
-      if (voltage < minVoltage) minVoltage = voltage;
-      if (voltage > maxVoltage) maxVoltage = voltage;
-    }
-
-    total += voltage;
-  }
-
-  float average = (total - minVoltage - maxVoltage) / (SAMPLE_RATE_VOLT - 2);
-
-  return average / VOLTAGE_RESOLUTION;
-}
-
-float amperage_Calculation() {
-
-  if (SAMPLE_RATE_AMP < 4) {
-    return 0.0f;
-  }
-
-  float minVoltage = 0.0f;
-  float maxVoltage = 0.0f;
-  float total = 0.0f;
-
-  for (int i = 0; i < SAMPLE_RATE_AMP; i++) {
-
-    int16_t rawSample = ads_module.readADC_SingleEnded(ADS_01);
-
-    // Convert ADC reading to voltage and remove the ACS712 zero-current offset
-    float voltage = ads_module.computeVolts(rawSample) - ACS712_ZERO_VOLTAGE;
-
-    if (i == 0) {
-      minVoltage = voltage;
-      maxVoltage = voltage;
-    }
-    else {
-      if (voltage < minVoltage) minVoltage = voltage;
-      if (voltage > maxVoltage) maxVoltage = voltage;
-    }
-
-    total += voltage;
-  }
-
-  float averageVoltage =
-      (total - minVoltage - maxVoltage) /
-      (SAMPLE_RATE_AMP - 2);
-
-  return averageVoltage / AMPERAGE_RESOLUTION;
-}
 
 void calibrate_loadCell(HX711_ADC& LoadCell, int LC_num){
   long known_mass {};

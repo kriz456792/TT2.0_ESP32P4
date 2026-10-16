@@ -6,5 +6,5 @@ struct MockRig : Rig {
   void begin() override;
   void update() override;
   void runFullTest() override;
-  void runDeveloperMode() override;
+  void developerMode() override;
 };
