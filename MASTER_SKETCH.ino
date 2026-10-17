@@ -55,8 +55,6 @@ void applicationTask(void *parameter){
           rig->runFullTest();
           break;
         case CALIBRATE_L_CELLS:
-          strcpy(tx.message, "TODO: MODIFY CALIBRATION POSITION.");
-          xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
           rig->calibrate_loadCells();
           break;
         case DEVELOPER_MODE:
