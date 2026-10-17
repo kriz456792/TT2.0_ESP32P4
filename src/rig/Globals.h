@@ -14,6 +14,7 @@
 #define FORWARD_ 201
 #define REVERSE_ 402
 #define RUN_TEST 603
+#define STOP_TEST 704
 #define CALIBRATE_L_CELLS 804
 #define DEVELOPER_MODE 105
 #define TARE_CELLS 306

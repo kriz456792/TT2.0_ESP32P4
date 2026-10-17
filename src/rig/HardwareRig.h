@@ -15,5 +15,5 @@ private:
   void runTest(int direction);
   float voltage_Calculation();
   float amperage_Calculation();
-  void calibrateLoadCell(HX711_ADC& LoadCell, int LC_num);
+  void calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num);
 };

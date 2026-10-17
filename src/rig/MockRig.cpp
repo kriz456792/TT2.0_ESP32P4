@@ -23,6 +23,14 @@ void MockRig::runFullTest() {
     float amps = sqrtf(progress) * 10.0f;   // parabolic arch curving upward (0 to 10)
     float force = progress * 1000.0f;       // 0 .. 1000
 
+    if (xQueueReceive(usbRxQueue, &rx, 0)) {
+        char* end;
+        long user_input = strtol(rx.message, &end, 10);
+        if (*end == '\0' && user_input == STOP_TEST) {
+            return; // Exit the function if STOP_TEST is received
+        }
+    }
+
     snprintf(tx.message, sizeof(tx.message),
              "PWM:%d,VOLTS:12,AMPS:%.2f,FORCE:%.0f",
              pwm, amps, force);
@@ -35,6 +43,14 @@ void MockRig::runFullTest() {
       float progress = abs(pwm - 1500) / 400.0f; // 0 at 1500, 1 at 1100
       float amps = sqrtf(progress) * 10.0f;   // parabolic arch curving upward (0 to 10)
       float force = progress * 1000.0f;       // 0 .. 1000
+
+      if (xQueueReceive(usbRxQueue, &rx, 0)) {
+          char* end;
+          long user_input = strtol(rx.message, &end, 10);
+          if (*end == '\0' && user_input == STOP_TEST) {
+              return; // Exit the function if STOP_TEST is received
+          }
+      }
 
       snprintf(tx.message, sizeof(tx.message),
           "PWM:%d,VOLTS:12,AMPS:%.2f,FORCE:%.0f",

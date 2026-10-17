@@ -134,6 +134,15 @@ void HardwareRig::runTest(int direction){
         i++;
       }
 
+      if (xQueueReceive(usbRxQueue, &rx, 0)) {
+		  char* end;
+		  long user_input = strtol(rx.message, &end, 10);
+		  if (*end == '\0' && user_input == STOP_TEST) {
+			  thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM); // Stop the thruster
+			  return; // Exit the function if STOP_TEST is received
+		  }
+      }
+
     }
 
     force_ /= reading_num;
@@ -267,7 +276,12 @@ float HardwareRig::amperage_Calculation() {
   return averageVoltage / AMPERAGE_RESOLUTION;
 }
 
-void HardwareRig::calibrateLoadCell(HX711_ADC& LoadCell, int LC_num) {
+void HardwareRig::calibrate_loadCells() {
+    calibrateSingleLoadCell(LoadCell_01, LC_01);
+    calibrateSingleLoadCell(LoadCell_02, LC_02);
+}
+
+void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
  
     long known_mass{};
 
@@ -360,8 +374,8 @@ void HardwareRig::calibrateLoadCell(HX711_ADC& LoadCell, int LC_num) {
 }
 
 void HardwareRig::tare_loadCells() {
-	LoadCell_01.tareNoDelay();
-	LoadCell_02.tareNoDelay();
+	LoadCell_01.tare();
+	LoadCell_02.tare();
 
 	while (true) {
 		LoadCell_01.update();
@@ -380,7 +394,4 @@ void HardwareRig::tare_loadCells() {
 	}
 }
 
-void HardwareRig::calibrate_loadCells() {
-	calibrateLoadCell(LoadCell_01, LC_01);
-	calibrateLoadCell(LoadCell_02, LC_02);
-}
+
