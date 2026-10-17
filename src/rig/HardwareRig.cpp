@@ -1,37 +1,25 @@
 #include "HardwareRig.h"
-
+#include <EEPROM.h> 
 #include <Arduino.h>
-#include <Adafruit_ADS1X15.h>
-#include <HX711_ADC.h>
+#include <Adafruit_ADS1X15.h> 
+#include <HX711_ADC.h> //NOTE: config.h sample rate must be set low for higher speeds.
 #include <ESP32Servo.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-
-#define ESC_PIN 14 //THRUSTER PIN
-#define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
-#define FORWARD_ 201
-#define REVERSE_ 402
-#define INCREASE_PWM 507
-#define DECREASE_PWM 708
-#define STOP_PWM 909
-#define RETURN_EXIT 100
-#define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
-#define ADS_01 1 //ADS1115 A1 input pin. Assigned to Amperage module.
-#define SAMPLE_RATE_VOLT 12 //Number of samples taken from module to average a reading. Lowest value is 4.
-#define SAMPLE_RATE_AMP 12 //Number of samples taken from module to average a reading. Lowest value is 4.
+#include "src/rig/Globals.h"
+#include "src/rig/UsbMessage.h"
 
 constexpr float VOLTAGE_RESOLUTION = .2f;
 constexpr float ACS712_ZERO_VOLTAGE = 2.55f; //midpoint reading on ads from Amp module
 constexpr float AMPERAGE_RESOLUTION = 0.066f;  // 66 mV/A
 
-typedef struct {
-  char message[64];
-} UsbMessage;
+HX711_ADC LoadCell_01(HX711_DOUT_01, HX711_SCK_01);
+HX711_ADC LoadCell_02(HX711_DOUT_02, HX711_SCK_02);
+Adafruit_ADS1X15 ads_module;
+Servo thruster_motor;
 
-extern HX711_ADC LoadCell_01;
-extern HX711_ADC LoadCell_02;
-extern Adafruit_ADS1X15 ads_module;
-extern Servo thruster_motor;
+uint64_t t{ 0 }; //t keeps track of current millis the program has been running.
+
 extern UsbMessage rx;
 extern UsbMessage tx;
 extern QueueHandle_t usbRxQueue;
@@ -277,4 +265,122 @@ float HardwareRig::amperage_Calculation() {
       (SAMPLE_RATE_AMP - 2);
 
   return averageVoltage / AMPERAGE_RESOLUTION;
+}
+
+void HardwareRig::calibrateLoadCell(HX711_ADC& LoadCell, int LC_num) {
+ 
+    long known_mass{};
+
+    switch (LC_num) {
+    case LC_01:
+        strcpy(tx.message, "Place Load Cell 1 on a level stable surface");
+        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+        break;
+    case LC_02:
+        strcpy(tx.message, "Place Load Cell 2 on a level stable surface");
+        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+        break;
+    }
+
+    while (true) {
+        //LOOP WILL WAIT UNTIL USER SETS THE TT ON IT'S SIDE AND REMOVES ANY LOAD FROM THE LOADCELL & CONFIRMS.
+        LoadCell_01.update();
+        LoadCell_02.update();
+
+        if (xQueueReceive(usbRxQueue, &rx, 0)) {
+
+            char* end;
+            long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
+
+            if (*end == '\0' && user_input == READY_)
+            {
+                LoadCell.tareNoDelay();
+            }
+
+            if (LoadCell.getDataSetStatus() == true) {
+                strcpy(tx.message, "READY_");
+                xQueueSend(usbTxQueue, &tx, 0);
+                break;
+            }
+            else {
+                strcpy(tx.message, "ERROR_");
+                xQueueSend(usbTxQueue, &tx, 0);
+                return;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    //Serial.println("Now place known mass on the loadcell 01.");
+    //Serial.println("Then send the weight of this mass (i.e 100.0) from serial monitor.");
+
+    while (true) {
+        //LOOP WILL WAIT UNTIL KNOWN MASS IS ON TT AND USER HAS CONFIRMED KNOWN MASS IS ON LOADCELL
+        LoadCell.update();
+
+        if (xQueueReceive(usbRxQueue, &rx, 0)) {
+
+            char* end;
+            known_mass = strtol(rx.message, &end, 10);  //convert message to intiger 
+
+            if (*end == '\0')
+            {
+                strcpy(tx.message, "SUCCESS_");
+                xQueueSend(usbTxQueue, &tx, 0);
+                break;
+            }
+        }
+    }
+
+    LoadCell.refreshDataSet();
+    float newCalibrationValue = LoadCell.getNewCalibration(known_mass);
+
+#if defined(ESP8266) || defined(ESP32)
+    EEPROM.begin(512);
+#endif
+    switch (LC_num) {
+    case LC_01:
+        EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        break;
+    case LC_02:
+        EEPROM.put(EEPROM_ADDR_VAL_02, newCalibrationValue);
+        break;
+    }
+#if defined(ESP8266) || defined(ESP32)
+    EEPROM.commit();
+#endif
+    switch (LC_num) {
+    case LC_01:
+        EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        break;
+    case LC_02:
+        EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
+        break;
+    }
+}
+
+void HardwareRig::tare_loadCells() {
+	LoadCell_01.tareNoDelay();
+	LoadCell_02.tareNoDelay();
+
+	while (true) {
+		LoadCell_01.update();
+		LoadCell_02.update();
+		if (LoadCell_01.getTareStatus() && LoadCell_02.getTareStatus()) {
+			strcpy(tx.message, "TARE_SUCCESS");
+			xQueueSend(usbTxQueue, &tx, 0);
+			break;
+		}
+		else {
+			strcpy(tx.message, "TARE_ERROR");
+			xQueueSend(usbTxQueue, &tx, 0);
+			return;
+		}
+		vTaskDelay(pdMS_TO_TICKS(10));
+	}
+}
+
+void HardwareRig::calibrate_loadCells() {
+	calibrateLoadCell(LoadCell_01, LC_01);
+	calibrateLoadCell(LoadCell_02, LC_02);
 }

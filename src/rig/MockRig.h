@@ -7,4 +7,6 @@ struct MockRig : Rig {
   void update() override;
   void runFullTest() override;
   void developerMode() override;
+  void calibrate_loadCells() override;
+  void tare_loadCells() override;
 };

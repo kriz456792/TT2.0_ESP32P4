@@ -1,19 +1,10 @@
 #include "MockRig.h"
-
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include <math.h>
-
-typedef struct {
-  char message[64];
-} UsbMessage;
-
-#define MIDDLE_POINT_PWM 1500
-#define INCREASE_PWM 507
-#define DECREASE_PWM 708
-#define STOP_PWM 909
-#define RETURN_EXIT 100
+#include "src/rig/Globals.h"
+#include "src/rig/UsbMessage.h"
 
 extern UsbMessage rx;
 extern UsbMessage tx;
@@ -21,8 +12,9 @@ extern QueueHandle_t usbRxQueue;
 extern QueueHandle_t usbTxQueue;
 
 void MockRig::begin() {}
-
 void MockRig::update() {}
+void MockRig::calibrate_loadCells() {}
+void MockRig::tare_loadCells() {}
 
 void MockRig::runFullTest() {
   // Fake telemetry while PWM steps 1500 -> 1900 | FORWARD.
