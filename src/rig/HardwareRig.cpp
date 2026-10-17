@@ -12,6 +12,7 @@
 constexpr float VOLTAGE_RESOLUTION = .2f;
 constexpr float ACS712_ZERO_VOLTAGE = 2.55f; //midpoint reading on ads from Amp module
 constexpr float AMPERAGE_RESOLUTION = 0.066f;  // 66 mV/A
+bool stopTestFlag = false;
 
 HX711_ADC LoadCell_01(HX711_DOUT_01, HX711_SCK_01);
 HX711_ADC LoadCell_02(HX711_DOUT_02, HX711_SCK_02);
@@ -84,9 +85,20 @@ void HardwareRig::update() {
 void HardwareRig::runFullTest() {
   runTest(FORWARD_);
   thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
+
+  if (stopTestFlag) {
+	  stopTestFlag = false; // Reset the flag for future tests
+	  return; // Exit if stopTestFlag is set
+  }
+
   delay(3000); // Allow water to settle.
   runTest(REVERSE_);
   thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM);
+
+  if (stopTestFlag) {
+      stopTestFlag = false; // Reset the flag for future tests
+      return; // Exit if stopTestFlag is set
+  }
 }
 
 void HardwareRig::runTest(int direction){
@@ -139,6 +151,7 @@ void HardwareRig::runTest(int direction){
 		  long user_input = strtol(rx.message, &end, 10);
 		  if (*end == '\0' && user_input == STOP_TEST) {
 			  thruster_motor.writeMicroseconds(MIDDLE_POINT_PWM); // Stop the thruster
+              stopTestFlag = true;
 			  return; // Exit the function if STOP_TEST is received
 		  }
       }

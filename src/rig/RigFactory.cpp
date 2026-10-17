@@ -4,7 +4,7 @@
 #include "HardwareRig.h"
 
 // Uncomment the next line when you want fake data instead of the real rig.
-#define USE_MOCK_RIG
+//#define USE_MOCK_RIG
 
 Rig* createRig() {
 #if defined(USE_MOCK_RIG)
