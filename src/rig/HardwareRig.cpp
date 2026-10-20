@@ -103,28 +103,17 @@ void HardwareRig::runFullTest() {
 
 void HardwareRig::runTest(int direction){
   float amps_ {0.0}, volts_ {0.0}, force_ {0.0};
-  int reading_num {10};
 
   t = millis();
   int speed_PWM = MIDDLE_POINT_PWM;
 
-  for (int j {0}; j < 40; j++){
+  for (int j {0}; j <= 40; j++){
 
-    switch (direction){
-      case FORWARD_:
-        speed_PWM += 10;
-        break;
+    for (int i{0}; i < 10; ){
+      thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
 
-      case REVERSE_:
-        speed_PWM -= 10;
-        break;
-    }
-
-    for (int i{0}; i < reading_num; ){
       LoadCell_01.update();
       LoadCell_02.update();
-
-      thruster_motor.writeMicroseconds(speed_PWM); //Thurster running.
 
       if(millis() > t + 50){
 
@@ -164,6 +153,16 @@ void HardwareRig::runTest(int direction){
 
     snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_, volts_, amps_);
     xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+
+    switch (direction) {
+    case FORWARD_:
+        speed_PWM += 10;
+        break;
+
+    case REVERSE_:
+        speed_PWM -= 10;
+        break;
+    }
   }
 }
 
@@ -187,10 +186,14 @@ void HardwareRig::developerMode() {
         switch(user_input)
         {
           case INCREASE_PWM:
-            speed_PWM += 10;
+              if (speed_PWM < MAX_PWM) {
+                  speed_PWM += 10;
+              }
             break;
           case DECREASE_PWM:
-            speed_PWM -= 10;
+			  if (speed_PWM > MIN_PWM) {
+				  speed_PWM -= 10;
+			  })
             break;
           case STOP_PWM:
             speed_PWM = MIDDLE_POINT_PWM;

@@ -10,7 +10,6 @@
 #define EEPROM_ADDR_VAL_02 4 //EEPROM ADDRESS... Used to store calibration data | TODO: Calibrate & Store Data
 
 //PROCEDURAL MACROS
-#define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
 #define FORWARD_ 201
 #define REVERSE_ 402
 #define RUN_TEST 603
@@ -27,6 +26,9 @@
 #define READY_ 333
 #define SUCCESS_ 444
 #define ERROR_ 555
+#define MAX_PWM 1900
+#define MIN_PWM 1100
+#define MIDDLE_POINT_PWM 1500 //STOP signal for thruster.
 
 
 #define ADS_00 0 //ADS1115 A0 input pin. Assigned to Voltage module.
