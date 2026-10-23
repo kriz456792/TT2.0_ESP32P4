@@ -13,8 +13,37 @@ extern QueueHandle_t usbTxQueue;
 
 void MockRig::begin() {}
 void MockRig::update() {}
-void MockRig::calibrate_loadCells() {}
 void MockRig::tare_loadCells() {}
+
+void MockRig::calibrate_loadCells() {
+  for (int cell = 0; cell < 2; cell++) {
+    while (true) {
+      if (xQueueReceive(usbRxQueue, &rx, 0)) {
+        char* end;
+        long user_input = strtol(rx.message, &end, 10);
+        if (*end == '\0' && user_input == READY_) {
+          strcpy(tx.message, "READY_");
+          xQueueSend(usbTxQueue, &tx, 0);
+          break;
+        }
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    while (true) {
+      if (xQueueReceive(usbRxQueue, &rx, 0)) {
+        char* end;
+        strtol(rx.message, &end, 10);
+        if (*end == '\0') {
+          strcpy(tx.message, "SUCCESS_");
+          xQueueSend(usbTxQueue, &tx, 0);
+          break;
+        }
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+  }
+}
 
 void MockRig::runFullTest() {
   // Fake telemetry while PWM steps 1500 -> 1900 | FORWARD.

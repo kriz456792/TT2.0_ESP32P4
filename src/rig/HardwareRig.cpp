@@ -147,9 +147,9 @@ void HardwareRig::runTest(int direction){
 
     }
 
-    force_ /= reading_num;
-    volts_ /= reading_num;
-    amps_ /= reading_num;
+    force_ /= 10;
+    volts_ /= 10;
+    amps_ /= 10;
 
     snprintf(tx.message, sizeof(tx.message), "PWM:%d,FORCE:%.2f,VOLTS:%.2f,AMPS:%.2f", speed_PWM, force_, volts_, amps_);
     xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
@@ -191,9 +191,9 @@ void HardwareRig::developerMode() {
               }
             break;
           case DECREASE_PWM:
-			  if (speed_PWM > MIN_PWM) {
-				  speed_PWM -= 10;
-			  })
+            if (speed_PWM > MIN_PWM) {
+              speed_PWM -= 10;
+            }
             break;
           case STOP_PWM:
             speed_PWM = MIDDLE_POINT_PWM;
@@ -301,16 +301,16 @@ void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
  
     long known_mass{};
 
-    switch (LC_num) {
-    case LC_01:
-        strcpy(tx.message, "Place Load Cell 1 on a level stable surface");
-        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-        break;
-    case LC_02:
-        strcpy(tx.message, "Place Load Cell 2 on a level stable surface");
-        xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-        break;
-    }
+    // switch (LC_num) {
+    // case LC_01:
+    //     strcpy(tx.message, "Place Load Cell 1 on a level stable surface");
+    //     xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+    //     break;
+    // case LC_02:
+    //     strcpy(tx.message, "Place Load Cell 2 on a level stable surface");
+    // xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
+    //     break;
+    // }
 
     while (true) {
         //LOOP WILL WAIT UNTIL USER SETS THE TT ON IT'S SIDE AND REMOVES ANY LOAD FROM THE LOADCELL & CONFIRMS.
