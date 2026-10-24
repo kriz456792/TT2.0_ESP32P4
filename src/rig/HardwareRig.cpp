@@ -299,67 +299,68 @@ void HardwareRig::calibrate_loadCells() {
 
 void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
  
-    long known_mass{};
-
-    // switch (LC_num) {
-    // case LC_01:
-    //     strcpy(tx.message, "Place Load Cell 1 on a level stable surface");
-    //     xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-    //     break;
-    // case LC_02:
-    //     strcpy(tx.message, "Place Load Cell 2 on a level stable surface");
-    // xQueueSend(usbTxQueue, &tx, pdMS_TO_TICKS(10));
-    //     break;
-    // }
+    float known_mass{};
 
     while (true) {
         //LOOP WILL WAIT UNTIL USER SETS THE TT ON IT'S SIDE AND REMOVES ANY LOAD FROM THE LOADCELL & CONFIRMS.
-        LoadCell_01.update();
-        LoadCell_02.update();
-
+	    LoadCell.update();
+            
         if (xQueueReceive(usbRxQueue, &rx, 0)) {
 
             char* end;
             long user_input = strtol(rx.message, &end, 10);  //convert message to intiger 
 
-            if (*end == '\0' && user_input == READY_)
-            {
-                LoadCell.tareNoDelay();
-            }
+            if (end != rx.message && *end == '\0' && user_input == READY_) {
 
-            if (LoadCell.getDataSetStatus() == true) {
-                strcpy(tx.message, "READY_");
+                LoadCell.tare();
+
+                if (LoadCell.getTareTimeoutFlag()) {
+					snprintf(tx.message,   //tx.message is the pointer to the array where the formatted string will be stored
+						sizeof(tx.message), //size of the message buffer
+						"%d", //format string to store the error code as a string, no decimal places
+						ERROR_); //value to be formatted and stored in the message buffer
+
+                    xQueueSend(usbTxQueue, &tx, 0);
+                    return;
+                }
+
+                snprintf(tx.message, sizeof(tx.message), "%d", SUCCESS_);
                 xQueueSend(usbTxQueue, &tx, 0);
                 break;
-            }
-            else {
-                strcpy(tx.message, "ERROR_");
-                xQueueSend(usbTxQueue, &tx, 0);
-                return;
-            }
+            }       
+       
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    //Serial.println("Now place known mass on the loadcell 01.");
-    //Serial.println("Then send the weight of this mass (i.e 100.0) from serial monitor.");
+    //"Now place known mass on the loadcell."
+    //"Then send the weight of this mass (i.e 100.0) from serial monitor."
 
     while (true) {
-        //LOOP WILL WAIT UNTIL KNOWN MASS IS ON TT AND USER HAS CONFIRMED KNOWN MASS IS ON LOADCELL
+
         LoadCell.update();
 
         if (xQueueReceive(usbRxQueue, &rx, 0)) {
 
             char* end;
-            known_mass = strtol(rx.message, &end, 10);  //convert message to intiger 
+            float input = strtof(rx.message, &end);
 
-            if (*end == '\0')
-            {
-                strcpy(tx.message, "SUCCESS_");
+            if (end != rx.message && *end == '\0' &&
+                isfinite(input) && input > 0.0f) {
+
+                known_mass = input;
+
+                snprintf(tx.message, sizeof(tx.message), "%d", SUCCESS_);
                 xQueueSend(usbTxQueue, &tx, 0);
                 break;
             }
+            else {
+                snprintf(tx.message, sizeof(tx.message), "%d", ERROR_);
+                xQueueSend(usbTxQueue, &tx, 0);
+            }
         }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     LoadCell.refreshDataSet();
@@ -382,9 +383,17 @@ void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
     switch (LC_num) {
     case LC_01:
         EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+		//send to gui that load cell 01 is calibrated and ready to use along with the calibration value.
+        strcpy(tx.message, "LC_01_CALIBRATED:");
+        dtostrf(newCalibrationValue, 1, 2, tx.message + strlen(tx.message));
+        xQueueSend(usbTxQueue, &tx, 0);
         break;
     case LC_02:
         EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
+        //send to gui that load cell 02 is calibrated and ready to use along with the calibration value.
+        strcpy(tx.message, "LC_02_CALIBRATED:");
+        dtostrf(newCalibrationValue, 1, 2, tx.message + strlen(tx.message));
+        xQueueSend(usbTxQueue, &tx, 0);
         break;
     }
 }
