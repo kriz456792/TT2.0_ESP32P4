@@ -21,8 +21,9 @@ void MockRig::calibrate_loadCells() {
       if (xQueueReceive(usbRxQueue, &rx, 0)) {
         char* end;
         long user_input = strtol(rx.message, &end, 10);
-        if (*end == '\0' && user_input == READY_) {
-          strcpy(tx.message, "READY_");
+
+        if (end != rx.message && *end == '\0' && user_input == READY_) {
+          snprintf(tx.message, sizeof(tx.message), "%d", SUCCESS_);
           xQueueSend(usbTxQueue, &tx, 0);
           break;
         }
@@ -33,15 +34,26 @@ void MockRig::calibrate_loadCells() {
     while (true) {
       if (xQueueReceive(usbRxQueue, &rx, 0)) {
         char* end;
-        strtol(rx.message, &end, 10);
-        if (*end == '\0') {
-          strcpy(tx.message, "SUCCESS_");
+        float input = strtof(rx.message, &end);
+
+        if (end != rx.message && *end == '\0' &&
+            isfinite(input) && input > 0.0f) {
+          snprintf(tx.message, sizeof(tx.message), "%d", SUCCESS_);
           xQueueSend(usbTxQueue, &tx, 0);
           break;
+        } else {
+          snprintf(tx.message, sizeof(tx.message), "%d", ERROR_);
+          xQueueSend(usbTxQueue, &tx, 0);
         }
       }
       vTaskDelay(pdMS_TO_TICKS(10));
     }
+
+    // Same default factor HardwareRig starts with before EEPROM has a saved value.
+    const float calibrationValue = 200.0f;
+    strcpy(tx.message, cell == 0 ? "LC_01_CALIBRATED:" : "LC_02_CALIBRATED:");
+    dtostrf(calibrationValue, 1, 2, tx.message + strlen(tx.message));
+    xQueueSend(usbTxQueue, &tx, 0);
   }
 }
 
