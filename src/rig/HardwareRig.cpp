@@ -47,11 +47,11 @@ void HardwareRig::begin() {
   boolean _tare { true };
   byte loadcell_01_ready {0}, loadcell_02_ready {0};
 
-  /*USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM. //TODO: UNCOMMENT, CALIBRATE LOAD CELLS & SAVE TO EEPROM
+  //USE TO FOLLOWING TO FETCH VALUES FROM EEPROM IF VALUES EXIST IN EEPROM. //TODO: UNCOMMENT, CALIBRATE LOAD CELLS & SAVE TO EEPROM
   EEPROM.begin(512);
   EEPROM.get(EEPROM_ADDR_VAL_01, calibrationValue_01);
   EEPROM.get(EEPROM_ADDR_VAL_02, calibrationValue_02);
-  */
+  EEPROM.end();
 
   LoadCell_01.begin();
   LoadCell_02.begin();
@@ -366,9 +366,8 @@ void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
     LoadCell.refreshDataSet();
     float newCalibrationValue = LoadCell.getNewCalibration(known_mass);
 
-#if defined(ESP8266) || defined(ESP32)
     EEPROM.begin(512);
-#endif
+
     switch (LC_num) {
     case LC_01:
         EEPROM.put(EEPROM_ADDR_VAL_01, newCalibrationValue);
@@ -377,25 +376,29 @@ void HardwareRig::calibrateSingleLoadCell(HX711_ADC& LoadCell, int LC_num) {
         EEPROM.put(EEPROM_ADDR_VAL_02, newCalibrationValue);
         break;
     }
-#if defined(ESP8266) || defined(ESP32)
+
     EEPROM.commit();
-#endif
+
+    float storedCalibrationValue {};
+
     switch (LC_num) {
     case LC_01:
-        EEPROM.get(EEPROM_ADDR_VAL_01, newCalibrationValue);
+        EEPROM.get(EEPROM_ADDR_VAL_01, storedCalibrationValue);
 		//send to gui that load cell 01 is calibrated and ready to use along with the calibration value.
         strcpy(tx.message, "LC_01_CALIBRATED:");
-        dtostrf(newCalibrationValue, 1, 2, tx.message + strlen(tx.message));
+        dtostrf(storedCalibrationValue, 1, 2, tx.message + strlen(tx.message));
         xQueueSend(usbTxQueue, &tx, 0);
         break;
     case LC_02:
-        EEPROM.get(EEPROM_ADDR_VAL_02, newCalibrationValue);
+        EEPROM.get(EEPROM_ADDR_VAL_02, storedCalibrationValue);
         //send to gui that load cell 02 is calibrated and ready to use along with the calibration value.
         strcpy(tx.message, "LC_02_CALIBRATED:");
-        dtostrf(newCalibrationValue, 1, 2, tx.message + strlen(tx.message));
+        dtostrf(storedCalibrationValue, 1, 2, tx.message + strlen(tx.message));
         xQueueSend(usbTxQueue, &tx, 0);
         break;
     }
+
+	EEPROM.end();
 }
 
 void HardwareRig::tare_loadCells() {
